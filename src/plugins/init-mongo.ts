@@ -1,0 +1,197 @@
+import mongodb from "@fastify/mongodb";
+import type { FastifyInstance } from "fastify";
+import fp from "fastify-plugin";
+import type { Collection, Document } from "mongodb";
+import packageJson from "../../package.json" with { type: "json" };
+
+/**
+ * Options for {@link resolveMongoUri} and {@link mongoPlugin}.
+ *
+ * `test` selects which candidate URI is consulted — `mongoTestUri` when `true`,
+ * `mongoUri` otherwise. It does NOT change the fallback chain: an unset URI
+ * falls back to the production default (`mongodb://localhost:27018`) in
+ * production, or an in-memory MongoDB otherwise. The two concerns are orthogonal.
+ */
+export type ResolveMongoUriOptions = {
+  test?: boolean;
+  // Non-test MongoDB URI (from MONGO_URI)
+  mongoUri?: string;
+  // Test-only MongoDB URI (from MONGO_TEST_URI)
+  mongoTestUri?: string;
+};
+
+/** The Compose MongoDB URI used in production when none is configured. */
+const PRODUCTION_DEFAULT_URI = "mongodb://localhost:27018";
+
+// The stdlib URL parser covers the single-host `mongodb://` URIs this template
+// uses; multi-host seed lists would need a MongoDB-specific parser.
+function parseMongoConnectionString(uri: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch (cause) {
+    throw new Error("Invalid MongoDB URI", { cause });
+  }
+
+  // WHATWG URL happily parses scheme-less strings like "localhost:27018" as
+  // a "localhost:" URL; reject anything that is not a MongoDB URI here so
+  // the failure is immediate and clear instead of an opaque driver error.
+  if (parsed.protocol !== "mongodb:" && parsed.protocol !== "mongodb+srv:") {
+    throw new Error(
+      `Invalid MongoDB URI: expected a "mongodb://" or "mongodb+srv://" scheme, got "${uri}"`,
+    );
+  }
+
+  return parsed;
+}
+
+function setMongoDatabase(connectionString: URL, databaseName: string): string {
+  const hasCredentials =
+    connectionString.username !== "" || connectionString.password !== "";
+  if (hasCredentials && !connectionString.searchParams.has("authSource")) {
+    const currentDatabase =
+      decodeURIComponent(connectionString.pathname.slice(1)) || "admin";
+    connectionString.searchParams.set("authSource", currentDatabase);
+  }
+
+  connectionString.pathname = `/${databaseName}`;
+  return connectionString.toString();
+}
+
+/**
+ * Appends `databaseName` to `uri` only when the URI does not already name a
+ * database; URIs with an explicit database are returned unchanged.
+ */
+export function withDefaultMongoDatabase(
+  uri: string,
+  databaseName: string,
+): string {
+  const connectionString = parseMongoConnectionString(uri);
+
+  // WHATWG URL leaves the pathname empty (not "/") for non-special schemes
+  // like mongodb: without a trailing slash; both mean "no database named".
+  if (connectionString.pathname === "" || connectionString.pathname === "/") {
+    return setMongoDatabase(connectionString, databaseName);
+  }
+
+  return uri;
+}
+
+/**
+ * Resolves the MongoDB connection URI.
+ *
+ * The candidate URIs are passed via options (not read from env). `loadOptions`
+ * seeds them from `MONGO_URI` / `MONGO_TEST_URI`; the app forwards both to this
+ * function so the env→option mapping stays single-sourced in `loadOptions`.
+ *
+ * Candidate selection:
+ * - `test: true` → `mongoTestUri` (test-only, from `MONGO_TEST_URI`).
+ * - `test` omitted / `false` → `mongoUri` (non-test / production, from `MONGO_URI`).
+ *
+ * Fallback chain (identical for both modes):
+ * 1. The selected candidate URI, if set — used as-is.
+ * 2. In production with it unset — the Compose MongoDB URI is used as the default.
+ * 3. Otherwise (development / tests) — an in-memory MongoDB is spawned and its
+ *    URI is used. The server is stopped on `onClose`.
+ *
+ * `mongodb-memory-server` is dynamically imported inside the function body so it
+ * is never loaded in production code paths.
+ */
+export async function resolveMongoUri(
+  fastify: FastifyInstance,
+  databaseName: string,
+  opts: ResolveMongoUriOptions = {},
+): Promise<string> {
+  const explicitUri = opts.test ? opts.mongoTestUri : opts.mongoUri;
+
+  if (explicitUri !== undefined) {
+    return withDefaultMongoDatabase(explicitUri, databaseName);
+  }
+
+  if (Bun.env.NODE_ENV === "production") {
+    return withDefaultMongoDatabase(PRODUCTION_DEFAULT_URI, databaseName);
+  }
+
+  const { MongoMemoryServer } = await import("mongodb-memory-server");
+  const mongod = await MongoMemoryServer.create();
+  fastify.addHook("onClose", async () => {
+    await mongod.stop();
+  });
+  return withDefaultMongoDatabase(mongod.getUri(), databaseName);
+}
+
+/**
+ * Options for {@link mongoPlugin}.
+ */
+export type MongoPluginOptions = {
+  // Database name appended to the resolved URI
+  databaseName: string;
+} & ResolveMongoUriOptions;
+
+/**
+ * Registers `@fastify/mongodb` with a resolved connection URI.
+ *
+ * Resolves the URI via {@link resolveMongoUri} (same candidate selection and
+ * fallback chain) and registers `@fastify/mongodb` with it, stopping the
+ * in-memory server on `onClose` when one was spawned.
+ *
+ * Wrapped in `fastify-plugin` so the `fastify.mongo` decorator is visible to
+ * sibling plugins and encapsulated routes.
+ */
+export const mongoPlugin = fp<MongoPluginOptions>(async (fastify, opts) => {
+  const uri = await resolveMongoUri(fastify, opts.databaseName, opts);
+  await fastify.register(mongodb, {
+    url: uri,
+    forceClose: true,
+  });
+});
+
+export type InitMongoPluginOptions = {
+  // MongoDB URI (Optional; non-test, from MONGO_URI; forwarded to mongoPlugin
+  // which resolves the URI and registers @fastify/mongodb)
+  mongoUri: string | undefined;
+  // Test-only MongoDB URI (from MONGO_TEST_URI)
+  mongoTestUri: string | undefined;
+  // Test mode flag (from --test / opts.test)
+  test?: boolean;
+};
+
+/**
+ * Connects to MongoDB and prepares the application collections.
+ *
+ * Resolves the connection URI through {@link mongoPlugin} (explicit
+ * `MONGO_URI` / `MONGO_TEST_URI`, the Compose default in production, or an
+ * in-memory MongoDB out of the box), then creates the collections and indexes
+ * on `onReady`. Add your own collections and indexes in the `onReady` hook
+ * below and extend the `fastify.collections` decorator.
+ */
+export default fp<InitMongoPluginOptions>(async (fastify, opts) => {
+  await fastify.register(mongoPlugin, {
+    databaseName: packageJson.name,
+    mongoUri: opts.mongoUri,
+    mongoTestUri: opts.mongoTestUri,
+    test: opts.test,
+  });
+
+  fastify.addHook("onReady", async () => {
+    // Initialize the MongoDB database.
+    // Add your collections here and create the indexes you need.
+    const db = fastify.mongo.db;
+    if (!db) {
+      throw new Error(
+        "MongoDB database handle is unavailable; mongoPlugin did not connect. Check MONGO_URI and the MongoDB server.",
+      );
+    }
+    const example = db.collection<Document>("example");
+    await example.createIndex({ example: 1 });
+    fastify.decorate("collections", { example });
+  });
+});
+
+declare module "fastify" {
+  export interface FastifyInstance {
+    collections: {
+      example: Collection<Document>;
+    };
+  }
+}

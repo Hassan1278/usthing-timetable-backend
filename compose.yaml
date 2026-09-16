@@ -1,0 +1,33 @@
+# Local development MongoDB for template-api (MONGO_URI points here by
+# default). Without it, dev and tests fall back to an in-memory MongoDB.
+#
+# Start it:
+#
+#   docker compose up -d
+#
+# Stop it:
+#
+#   docker compose stop
+#
+# Reset the data volume:
+#
+#   docker compose down -v
+
+services:
+  mongodb:
+    image: mongo:8.3.4
+    container_name: template-api-mongo
+    ports:
+      - "127.0.0.1:27018:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  mongo_data:

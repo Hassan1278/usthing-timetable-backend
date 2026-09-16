@@ -1,0 +1,47 @@
+{
+  "type": "module",
+  "name": "template-api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A simple, singular Fastify + TypeScript + MongoDB service template for USThing, running on Bun.",
+  "main": "src/app.ts",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "dev": "bun --bun fastify start --watch --log-level=debug --pretty-logs --options src/app.ts",
+    "start": "bun --bun fastify start --log-level=info --options src/app.ts",
+    "test": "bun test --coverage --timeout=60000 test",
+    "compile": "tsc && tsc -p test/tsconfig.json",
+    "check": "biome ci .",
+    "lint": "biome lint --write .",
+    "fmt": "biome format --write ."
+  },
+  "engines": {
+    "bun": ">=1.4.2"
+  },
+  "keywords": [],
+  "author": "USThing Team",
+  "license": "MIT",
+  "dependencies": {
+    "@fastify/autoload": "^6.5.0",
+    "@fastify/cors": "^11.3.0",
+    "@fastify/mongodb": "^10.0.1",
+    "@fastify/sensible": "^6.0.5",
+    "@fastify/swagger": "^9.8.1",
+    "@fastify/swagger-ui": "^6.1.1",
+    "@scalar/fastify-api-reference": "^1.68.0",
+    "fastify": "^5.12.4",
+    "fastify-cli": "^8.0.2",
+    "fastify-plugin": "^6.0.0",
+    "mongodb": "^7.6.0",
+    "typebox": "^1.3.31"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.13",
+    "@fastify/type-provider-typebox": "^6.1.0",
+    "@types/bun": "^1.4.2",
+    "mongodb-memory-server": "^11.2.0",
+    "typescript": "7.0.2"
+  }
+}
