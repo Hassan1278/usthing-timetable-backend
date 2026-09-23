@@ -199,6 +199,17 @@ revision, and timestamps. A new series has an empty exceptions list.
 
 ## Validation and implementation order
 
+`src/events/validation.ts` implements `validateEvent` for a complete,
+schema-validated event. Timed ends must follow starts as actual instants;
+all-day ends must follow starts as Hong Kong calendar dates. Equal endpoints
+are rejected. Past events remain allowed. Failures throw `EventValidationError`,
+which the future HTTP endpoints must map to a 400 response. The function does
+not change the input or allow a client-selected timezone.
+
+The create flow is: authenticate, validate the request schema, validate business
+rules, apply defaults, then add server-controlled fields and save. Updates must
+validate the complete merged event before saving.
+
 - Require a nonblank title of at most 120 characters; allow an optional
   description up to 2000 characters and location up to 200 characters.
 - Validate event types, booleans, schedule shapes, and reminder limits at runtime.
