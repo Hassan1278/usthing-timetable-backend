@@ -11,6 +11,28 @@ used by application code. Neither automatically creates a MongoDB collection
 validator. MongoDB stores documents in an `events` collection; its collection
 and indexes will be configured separately.
 
+`src/events/model.ts` defines the current `EventDocument` storage type. It reuses
+the validated event fields and resolved email settings, replaces timed schedule
+strings with JavaScript `Date` values (serialized by MongoDB as BSON dates), and
+requires an `ObjectId`, owner ID, calendar UID, revision, and timestamps. All-day
+dates remain strings in the fixed Hong Kong timetable. The type describes these
+fields; `src/events/service.ts` converts schedules, resolves defaults, generates
+metadata, and inserts the document after business validation. Its input must
+already have passed request-schema validation.
+
+`src/plugins/init-mongo.ts` registers the typed collection as
+`fastify.collections.events` and creates the unique compound index
+`{ ownerId: 1, uid: 1 }` before the app becomes ready. One owner cannot store
+the same calendar UID twice, but different owners can share a UID. The index's
+owner prefix also supports owner-based lookups, so a separate owner-only index
+is unnecessary. MongoDB also provides the unique `_id` index automatically.
+Indexes do not enforce authorization: every event operation must still filter
+by the authenticated owner. No MongoDB collection validator is installed yet.
+
+The current storage type covers non-recurring events. The recurrence and
+exception fields below describe the planned extension; their concrete types
+will be added with that feature.
+
 ## Event fields
 
 | Field | Meaning | Controlled by |
@@ -169,8 +191,8 @@ still exist before sending. Creating an event does not itself send an email.
 
 `src/events/defaults.ts` implements reminder defaults for validated manual
 create requests. `applyCreateEventDefaults` returns a new event object with
-resolved email settings and leaves its input unchanged. Call it after request
-validation and before storage. It does not validate untrusted input, schedule
+resolved email settings and leaves its input unchanged. The creation service
+calls it after validation and before storage. It does not validate untrusted input, schedule
 emails, or apply update/import rules; those paths will be implemented separately.
 
 ## Example create request
@@ -195,7 +217,7 @@ emails, or apply update/import rules; those paths will be implemented separately
 
 Before insertion, the server validates the request, resolves reminder defaults,
 normalizes schedule values, and adds the event ID, owner ID, calendar UID,
-revision, and timestamps. A new series has an empty exceptions list.
+revision, and timestamps. Recurrence and exception storage are future work.
 
 ## Validation and implementation order
 
@@ -203,12 +225,20 @@ revision, and timestamps. A new series has an empty exceptions list.
 schema-validated event. Timed ends must follow starts as actual instants;
 all-day ends must follow starts as Hong Kong calendar dates. Equal endpoints
 are rejected. Past events remain allowed. Failures throw `EventValidationError`,
-which the future HTTP endpoints must map to a 400 response. The function does
+which `POST /events` maps to a 400 response. The function does
 not change the input or allow a client-selected timezone.
 
 The create flow is: authenticate, validate the request schema, validate business
 rules, apply defaults, then add server-controlled fields and save. Updates must
 validate the complete merged event before saving.
+
+`src/routes/events/index.ts` connects this flow to `POST /events` inside a
+`withAuth` scope. Its TypeBox validator checks the request without stripping
+unknown properties, coercing types, or injecting defaults. This rejects
+client-supplied ownership, metadata, and `timeZone` fields. On success,
+`src/events/response.ts` maps the stored document to an explicit public response
+with `id` and ISO timestamp strings, excluding `_id` and `ownerId`. UTC (`Z`)
+timestamps represent the same instants in the fixed Hong Kong timetable.
 
 - Require a nonblank title of at most 120 characters; allow an optional
   description up to 2000 characters and location up to 200 characters.

@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import type { Collection, Document } from "mongodb";
 import packageJson from "../../package.json" with { type: "json" };
+import type { EventDocument } from "../events/model.js";
 
 /**
  * Options for {@link resolveMongoUri} and {@link mongoPlugin}.
@@ -184,7 +185,13 @@ export default fp<InitMongoPluginOptions>(async (fastify, opts) => {
     }
     const example = db.collection<Document>("example");
     await example.createIndex({ example: 1 });
-    fastify.decorate("collections", { example });
+    const events = db.collection<EventDocument>("events");
+    // The ownerId prefix also supports listing an owner's events.
+    await events.createIndex(
+      { ownerId: 1, uid: 1 },
+      { unique: true, name: "events_owner_uid_unique" },
+    );
+    fastify.decorate("collections", { example, events });
   });
 });
 
@@ -192,6 +199,7 @@ declare module "fastify" {
   export interface FastifyInstance {
     collections: {
       example: Collection<Document>;
+      events: Collection<EventDocument>;
     };
   }
 }

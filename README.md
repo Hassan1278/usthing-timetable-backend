@@ -20,6 +20,46 @@ docker compose up -d
 cp .env.example .env
 ```
 
+## Custom events
+
+`POST /events` creates a custom event for the authenticated user. Example using
+the local sample account:
+
+```sh
+curl -i http://localhost:3000/events \
+  -H 'Authorization: Bearer alice-dev-token' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "title": "Doctor appointment",
+    "eventType": "appointment",
+    "isOptional": false,
+    "schedule": {
+      "kind": "timed",
+      "startsAt": "2026-10-05T10:00:00+08:00",
+      "endsAt": "2026-10-05T11:00:00+08:00"
+    }
+  }'
+```
+
+Success returns `201 Created` with the event, including its generated `id`,
+calendar `uid`, revision `1`, and timestamps. Timed responses use UTC ISO strings;
+the timetable remains fixed to `Asia/Hong_Kong`. All-day events instead use
+`{ "kind": "all-day", "startsOn": "2026-10-05", "endsOn": "2026-10-06" }`,
+where the end date is exclusive.
+
+The server derives ownership from the token. Unexpected fields (including
+`ownerId` and `timeZone`), invalid values, or an end not after the start return
+`400`. Missing or unknown credentials return `401`; malformed authorization
+headers return `400`. Rejected requests do not create an event.
+
+Appointments default to email reminders 24 hours and 2 hours before; other
+event types default to email disabled. Explicit `emailNotifications` settings
+override these defaults. This endpoint only stores settings; it does not send
+email. Listing, reading, updating, deleting, and recurrence are still pending.
+
+See [the event model](docs/event-model.md) for field rules and planned features.
+The API schema is available at `/documentation` and `/reference` when running.
+
 ## Environment
 
 Everything here is optional. Copy `.env.example` to `.env` and set what you need.
