@@ -55,7 +55,8 @@ headers return `400`. Rejected requests do not create an event.
 Appointments default to email reminders 24 hours and 2 hours before; other
 event types default to email disabled. Explicit `emailNotifications` settings
 override these defaults. This endpoint only stores settings; it does not send
-email. Updating, deleting, and recurrence are still pending.
+email. Basic event CRUD is implemented; recurrence and reminder delivery are
+still pending.
 
 ### Reading events
 
@@ -87,6 +88,53 @@ curl 'http://localhost:3000/events?from=2026-10-05&to=2026-10-12&limit=50' \
 Invalid query values or malformed IDs return `400`. A missing event or an event
 owned by another user returns the same `404`. Client-supplied `ownerId` and
 `timeZone` query fields are rejected; ownership always comes from authentication.
+
+### Updating and deleting events
+
+`POST /events`, `GET /events/:id`, and successful PATCH responses include an
+`ETag` header containing the quoted revision, such as `"1"`. PATCH and DELETE
+require that value in `If-Match`. A list item also includes its numeric revision,
+which can be quoted to form the same header. This prevents stale clients from
+overwriting or deleting newer edits.
+
+```sh
+# Replace EVENT_ID with the ID returned by creation.
+curl -i -X PATCH 'http://localhost:3000/events/EVENT_ID' \
+  -H 'Authorization: Bearer alice-dev-token' \
+  -H 'If-Match: "1"' \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Updated appointment","isOptional":true}'
+```
+
+PATCH returns `200` with the updated event and next ETag. Only supplied fields
+change. At least one editable field is required. A supplied `schedule` or
+`emailNotifications` object replaces that whole object and must have a valid
+shape. An omitted notification field preserves existing reminders, even when
+`eventType` changes. Explicit `{ "enabled": true }` resets timings to the
+24-hour and 2-hour defaults. Use an empty string to clear description or location
+text; null is not accepted. Ownership, IDs, revision, timestamps and `timeZone`
+cannot be supplied in the body.
+
+```sh
+# Use the latest ETag: the example PATCH changes revision 1 to revision 2.
+curl -i -X DELETE 'http://localhost:3000/events/EVENT_ID' \
+  -H 'Authorization: Bearer alice-dev-token' \
+  -H 'If-Match: "2"'
+```
+
+DELETE returns `204` with no body. Deletion is permanent. Both mutations return:
+
+| Status | Meaning |
+| --- | --- |
+| `400` | Invalid input, ID or revision header; business validation failed |
+| `401` | Missing or unknown bearer token |
+| `404` | No event belongs to this user at that ID |
+| `412` | Revision is stale; fetch the latest event before retrying |
+| `428` | Required `If-Match` header is missing |
+
+The API accepts one quoted positive revision, not wildcard, weak or multiple
+ETags. Each successful PATCH increments the revision, even if the supplied
+values equal the current values. Repeating a completed deletion returns `404`.
 
 See [the event model](docs/event-model.md) for field rules and planned features.
 The API schema is available at `/documentation` and `/reference` when running.

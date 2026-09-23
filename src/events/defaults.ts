@@ -10,6 +10,20 @@ export type EventWithDefaults = Omit<CreateEventInput, "emailNotifications"> & {
 
 const DEFAULT_REMINDER_MINUTES = [1440, 120] as const;
 
+/** Resolve explicit settings; callers decide what an omitted field means. */
+export function resolveEmailNotifications(
+  settings: EmailNotificationsInput,
+): ResolvedEmailNotifications {
+  return settings.enabled
+    ? {
+        enabled: true,
+        minutesBefore: [
+          ...(settings.minutesBefore ?? DEFAULT_REMINDER_MINUTES),
+        ],
+      }
+    : { enabled: false };
+}
+
 /**
  * Apply defaults after validating a manual create request with CreateEventSchema.
  * Updates and imports have different omission rules and must not use this helper.
@@ -21,14 +35,5 @@ export function applyCreateEventDefaults(
     enabled: input.eventType === "appointment",
   };
 
-  const emailNotifications: ResolvedEmailNotifications = settings.enabled
-    ? {
-        enabled: true,
-        minutesBefore: [
-          ...(settings.minutesBefore ?? DEFAULT_REMINDER_MINUTES),
-        ],
-      }
-    : { enabled: false };
-
-  return { ...input, emailNotifications };
+  return { ...input, emailNotifications: resolveEmailNotifications(settings) };
 }

@@ -3,6 +3,15 @@ import type { TSchema } from "typebox";
 import { Compile } from "typebox/compile";
 import type { FastifyTypebox } from "../../app.js";
 import {
+  MutationHeadersSchema,
+  PatchEventSchema,
+} from "../../events/mutation-schemas.js";
+import {
+  deleteEvent,
+  EventRevisionError,
+  updateEvent,
+} from "../../events/mutations.js";
+import {
   EventIdParamsSchema,
   ListEventsQuerySchema,
 } from "../../events/query-schemas.js";
@@ -84,7 +93,9 @@ const events: FastifyPluginAsync = async (fastify: FastifyTypebox) => {
           request.user.id,
         );
         if (!event) return reply.notFound("Event not found.");
-        return toEventResponse(event);
+        return reply
+          .header("ETag", `"${event.revision}"`)
+          .send(toEventResponse(event));
       },
     );
 
@@ -109,11 +120,120 @@ const events: FastifyPluginAsync = async (fastify: FastifyTypebox) => {
             request.body,
             request.user.id,
           );
-          return reply.code(201).send(toEventResponse(event));
+          return reply
+            .code(201)
+            .header("ETag", `"${event.revision}"`)
+            .send(toEventResponse(event));
         } catch (error) {
           if (error instanceof EventValidationError) {
             return reply.badRequest(error.message);
           }
+          throw error;
+        }
+      },
+    );
+
+    scope.patch(
+      "/:id",
+      {
+        validatorCompiler: strictValidatorCompiler,
+        schema: {
+          summary: "Update one of your events",
+          description:
+            'Requires If-Match with the current quoted revision, for example "1". Supplied nested objects replace previous settings; omitted fields stay unchanged.',
+          tags: ["Events"],
+          security: [{ Auth: [] }],
+          params: EventIdParamsSchema,
+          headers: MutationHeadersSchema,
+          body: PatchEventSchema,
+          response: {
+            200: EventResponseSchema,
+            400: HttpError,
+            404: HttpError,
+            412: HttpError,
+            428: HttpError,
+          },
+        },
+      },
+      async (request, reply) => {
+        const match = request.headers["if-match"];
+        if (match === undefined)
+          return reply.preconditionRequired(
+            "Supply If-Match with the current event revision.",
+          );
+        const revision = Number(match.slice(1, -1));
+        if (
+          !Number.isSafeInteger(revision) ||
+          revision >= Number.MAX_SAFE_INTEGER
+        )
+          return reply.badRequest("Invalid event revision.");
+        try {
+          const event = await updateEvent(
+            scope.collections.events,
+            request.params.id,
+            request.user.id,
+            revision,
+            request.body,
+          );
+          if (!event) return reply.notFound("Event not found.");
+          return reply
+            .header("ETag", `"${event.revision}"`)
+            .send(toEventResponse(event));
+        } catch (error) {
+          if (error instanceof EventValidationError)
+            return reply.badRequest(error.message);
+          if (error instanceof EventRevisionError)
+            return reply.preconditionFailed(error.message);
+          throw error;
+        }
+      },
+    );
+
+    scope.delete(
+      "/:id",
+      {
+        validatorCompiler: strictValidatorCompiler,
+        schema: {
+          summary: "Delete one of your events",
+          description:
+            "Requires If-Match with the current quoted revision. Success returns 204 without a body.",
+          tags: ["Events"],
+          security: [{ Auth: [] }],
+          params: EventIdParamsSchema,
+          headers: MutationHeadersSchema,
+          response: {
+            204: { type: "null", description: "Event deleted" },
+            400: HttpError,
+            404: HttpError,
+            412: HttpError,
+            428: HttpError,
+          },
+        },
+      },
+      async (request, reply) => {
+        const match = request.headers["if-match"];
+        if (match === undefined)
+          return reply.preconditionRequired(
+            "Supply If-Match with the current event revision.",
+          );
+        const revision = Number(match.slice(1, -1));
+        if (
+          !Number.isSafeInteger(revision) ||
+          revision >= Number.MAX_SAFE_INTEGER
+        )
+          return reply.badRequest("Invalid event revision.");
+        try {
+          const deleted = await deleteEvent(
+            scope.collections.events,
+            request.params.id,
+            request.user.id,
+            revision,
+          );
+          if (!deleted) return reply.notFound("Event not found.");
+          return reply.code(204).send(null);
+        } catch (error) {
+          if (error instanceof EventRevisionError)
+            return reply.preconditionFailed(error.message);
           throw error;
         }
       },

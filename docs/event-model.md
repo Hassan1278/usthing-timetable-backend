@@ -219,7 +219,9 @@ still exist before sending. Creating an event does not itself send an email.
 create requests. `applyCreateEventDefaults` returns a new event object with
 resolved email settings and leaves its input unchanged. The creation service
 calls it after validation and before storage. It does not validate untrusted input, schedule
-emails, or apply update/import rules; those paths will be implemented separately.
+emails, or apply update/import omission rules. The update service preserves
+omitted settings and uses the shared `resolveEmailNotifications` function only
+for explicitly supplied notification settings. Import remains future work.
 
 ## Example create request
 
@@ -251,7 +253,7 @@ revision, and timestamps. Recurrence and exception storage are future work.
 schema-validated event. Timed ends must follow starts as actual instants;
 all-day ends must follow starts as Hong Kong calendar dates. Equal endpoints
 are rejected. Past events remain allowed. Failures throw `EventValidationError`,
-which `POST /events` maps to a 400 response. The function does
+which POST and PATCH map to a 400 response. The function does
 not change the input or allow a client-selected timezone.
 
 The create flow is: authenticate, validate the request schema, validate business
@@ -275,7 +277,34 @@ timestamps represent the same instants in the fixed Hong Kong timetable.
 - Validate the complete candidate event after merging a partial update.
 - Check revision and ownership together when applying updates or deletions.
 
-Implement the base request schemas and tests first, then normalization and
-domain validation, the stored-document type, and the MongoDB collection/indexes.
-Build CRUD before adding recurrence, conflicts, ICS import/export, and reminder
-delivery. Each milestone includes its own tests and documentation updates.
+## Updates and deletion
+
+`src/events/mutation-schemas.ts` derives the PATCH body from the create schema,
+making only top-level fields optional and rejecting empty patches. Nested
+schedule and email objects replace their previous values. Null is not accepted;
+an empty description or location string clears its displayed text.
+
+`src/events/mutations.ts` reads the owned event and merges permitted fields,
+then checks the complete candidate against the create schema and business rules.
+It preserves omitted reminder settings, resolves explicitly supplied timings,
+and normalizes dates before writing. ID, owner, UID and creation time remain
+unchanged. Every successful update changes `updatedAt` and increments revision.
+
+Both PATCH and DELETE require the current quoted revision in `If-Match`.
+POST, single-event GET and PATCH expose this value through `ETag`, also made
+readable by browser clients through CORS. Missing preconditions return `428`,
+malformed headers return `400`, and stale revisions return `412`. Fetch current
+state before retrying a stale edit. Missing or foreign events return `404`.
+
+MongoDB applies ownership and revision predicates in the same atomic operation
+as the update or deletion. The initial PATCH read alone is not a concurrency
+guarantee: `findOneAndUpdate` must still match the revision when writing. DELETE
+uses `deleteOne` with the same conditions and returns an empty `204` on success.
+A concurrent deletion during PATCH can cause `412` after the initial read;
+an event already absent when PATCH begins returns `404`. No transaction or
+background queue is needed for these single-document writes.
+
+Base CRUD, input validation, defaults, storage types, indexes and tests are
+implemented. Remaining milestones include recurrence, conflicts, ICS
+import/export, reminder delivery and API containerization. Each milestone
+includes tests and documentation updates.
