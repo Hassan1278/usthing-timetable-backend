@@ -55,7 +55,38 @@ headers return `400`. Rejected requests do not create an event.
 Appointments default to email reminders 24 hours and 2 hours before; other
 event types default to email disabled. Explicit `emailNotifications` settings
 override these defaults. This endpoint only stores settings; it does not send
-email. Listing, reading, updating, deleting, and recurrence are still pending.
+email. Updating, deleting, and recurrence are still pending.
+
+### Reading events
+
+All GET endpoints require the same bearer token:
+
+| Request | Result |
+| --- | --- |
+| `GET /events` | The user's non-recurring events across all dates, paginated |
+| `GET /events?from=2026-10-05&to=2026-10-12` | Non-recurring events overlapping that Hong Kong calendar week |
+| `GET /events/:id` | One owned event, using the `id` returned by creation |
+
+`from` and `to` must either both be supplied or both omitted. They are date-only
+values interpreted at Hong Kong midnight. `to` is exclusive; the range must be
+1–93 days. Events crossing a boundary are included, but an event ending exactly
+at `from` or starting exactly at `to` is excluded. Recurring series and occurrence
+expansion are not supported yet; list queries exclude documents with recurrence.
+
+Lists return `{ "items": [...], "nextCursor": "..." }`. The default page size
+is 50; set `limit` to an integer from 1 to 100. Pass `nextCursor` as `after` with
+the same range filters to request the next page. A null cursor means no further
+page. Results are ordered by ascending event ID, not scheduled time; the UI can
+arrange them on its calendar. Pages are live reads, not a frozen snapshot.
+
+```sh
+curl 'http://localhost:3000/events?from=2026-10-05&to=2026-10-12&limit=50' \
+  -H 'Authorization: Bearer alice-dev-token'
+```
+
+Invalid query values or malformed IDs return `400`. A missing event or an event
+owned by another user returns the same `404`. Client-supplied `ownerId` and
+`timeZone` query fields are rejected; ownership always comes from authentication.
 
 See [the event model](docs/event-model.md) for field rules and planned features.
 The API schema is available at `/documentation` and `/reference` when running.

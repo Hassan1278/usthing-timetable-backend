@@ -21,6 +21,19 @@ export const EventResponseSchema = Type.Object(
 
 export type EventResponse = Static<typeof EventResponseSchema>;
 
+export const EventListResponseSchema = Type.Object(
+  {
+    items: Type.Array(EventResponseSchema, { maxItems: 100 }),
+    nextCursor: Type.Union([
+      Type.String({ pattern: "^[a-f0-9]{24}$" }),
+      Type.Null(),
+    ]),
+  },
+  { additionalProperties: false },
+);
+
+export type EventListResponse = Static<typeof EventListResponseSchema>;
+
 /** Explicit public fields prevent storage-only data from leaking into responses. */
 export function toEventResponse(event: EventDocument): EventResponse {
   return {

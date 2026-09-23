@@ -8,8 +8,8 @@
 
 TypeBox schemas will validate requests. TypeScript types will describe the data
 used by application code. Neither automatically creates a MongoDB collection
-validator. MongoDB stores documents in an `events` collection; its collection
-and indexes will be configured separately.
+validator. MongoDB stores documents in an `events` collection; the database
+plugin configures the collection and indexes separately from these types.
 
 `src/events/model.ts` defines the current `EventDocument` storage type. It reuses
 the validated event fields and resolved email settings, replaces timed schedule
@@ -26,12 +26,38 @@ already have passed request-schema validation.
 the same calendar UID twice, but different owners can share a UID. The index's
 owner prefix also supports owner-based lookups, so a separate owner-only index
 is unnecessary. MongoDB also provides the unique `_id` index automatically.
+An `{ ownerId: 1, _id: 1 }` index supports cursor pagination. Two additional
+indexes start with owner and schedule kind, followed by `schedule.startsAt`
+or `schedule.startsOn`, to support timed and all-day range filtering. The end
+boundary is also checked in the query; an index does not replace overlap rules.
 Indexes do not enforce authorization: every event operation must still filter
 by the authenticated owner. No MongoDB collection validator is installed yet.
 
 The current storage type covers non-recurring events. The recurrence and
 exception fields below describe the planned extension; their concrete types
 will be added with that feature.
+
+## Reading events
+
+`GET /events/:id` queries by both event ID and authenticated owner ID. A missing
+event and another owner's event both return `404`; an invalid ID returns `400`.
+
+`GET /events` lists the owner's non-recurring events. Optional paired `from` and
+`to` date strings restrict results to a window of 1–93 Hong Kong calendar days,
+with an exclusive end. Timed overlaps use BSON dates with boundaries at Hong
+Kong midnight; all-day overlaps compare date strings. Both use start-before-end
+and end-after-start inequalities, including events spanning the entire window.
+The current query excludes documents where `recurrence` exists. When recurrence
+is implemented, the range query will expand series into occurrences; the
+unfiltered listing will continue to exclude them.
+
+`limit` defaults to 50 and accepts integer query text from 1 to 100. Lists use
+ascending `_id` order with an optional `after` ObjectId cursor and return
+`{ items, nextCursor }`. Queries fetch at most `limit + 1` documents to determine
+whether another page exists. Reuse the range filters on each page. Pagination
+does not create a snapshot, and IDs determine page order rather than event time.
+`src/events/query-schemas.ts` rejects unknown query fields and malformed values;
+the service validates paired range dates and duration before querying MongoDB.
 
 ## Event fields
 

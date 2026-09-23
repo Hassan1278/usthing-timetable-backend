@@ -191,6 +191,17 @@ export default fp<InitMongoPluginOptions>(async (fastify, opts) => {
       { ownerId: 1, uid: 1 },
       { unique: true, name: "events_owner_uid_unique" },
     );
+    await events.createIndexes([
+      { key: { ownerId: 1, _id: 1 }, name: "events_owner_id" },
+      {
+        key: { ownerId: 1, "schedule.kind": 1, "schedule.startsAt": 1 },
+        name: "events_owner_timed_start",
+      },
+      {
+        key: { ownerId: 1, "schedule.kind": 1, "schedule.startsOn": 1 },
+        name: "events_owner_all_day_start",
+      },
+    ]);
     fastify.decorate("collections", { example, events });
   });
 });
