@@ -18,7 +18,25 @@ async function buildAuthApp(options: AuthPluginOptions = {}) {
   await app.ready();
   return app;
 }
+test("authentication returns a stable public identity", async () => {
+  const app = await buildAuthApp();
+  onTestFinished(() => app.close());
 
+  const firstAlice = await app.authenticate("alice-dev-token");
+  const secondAlice = await app.authenticate("alice-dev-token");
+  const bob = await app.authenticate("bob-dev-token");
+
+  assert.equal(firstAlice.id, "0f5551bd-10be-41dc-bd28-827ed4b49a67");
+  assert.equal(secondAlice.id, firstAlice.id);
+  assert.notEqual(bob.id, firstAlice.id);
+
+  assert.deepEqual(firstAlice, {
+    id: "0f5551bd-10be-41dc-bd28-827ed4b49a67",
+    username: "alice",
+    name: "Alice",
+  });
+  assert.ok(!("token" in firstAlice));
+});
 test("protected route rejects missing credentials", async () => {
   const app = await buildAuthApp();
   onTestFinished(() => app.close());

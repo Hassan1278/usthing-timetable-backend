@@ -58,6 +58,7 @@ export class AuthorizationHeaderError extends Error {
 
 /** The application user resolved from an authenticated bearer token. */
 export interface AuthUser {
+  id: string;
   /** The user's username from the static token table. */
   username: string;
   /** The user's display name; may be null. */
@@ -136,7 +137,11 @@ export type WithAuthMethod<
 ) => FastifyInstance<RawServer, RawRequest, RawReply, Logger, TypeProvider>;
 
 /** The fixed anonymous user requests are authenticated as under `authSkip`. */
-const ANONYMOUS_USER: AuthUser = { username: "anonymous", name: null };
+const ANONYMOUS_USER: AuthUser = {
+  id: "00000000-0000-0000-0000-000000000000",
+  username: "anonymous",
+  name: null,
+};
 
 const includesAuthResponses = Symbol("includesAuthResponses");
 
@@ -269,7 +274,7 @@ const auth: FastifyPluginAsync<AuthPluginOptions> = async (fastify, opts) => {
     if (!user) {
       throw new UnauthorizedError(new Error("Unknown bearer token"));
     }
-    return { username: user.username, name: user.name };
+    return { id: user.id, username: user.username, name: user.name };
   }
 
   async function authenticateRequest(

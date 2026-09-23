@@ -5,6 +5,8 @@
  * bearer token of one of these users.
  */
 export type InternalUser = {
+  /** Immutable user identifier used for resource ownership. */
+  id: string;
   /** The user's username exposed on `request.user` inside `withAuth` scopes. */
   username: string;
   /** The user's display name; may be null. */
@@ -19,6 +21,16 @@ export type InternalUser = {
 // Sample users for local development and tests. These tokens act as passwords
 // and must be replaced with real secrets before any real deployment.
 export const users: InternalUser[] = [
-  { username: "alice", name: "Alice", token: "alice-dev-token" },
-  { username: "bob", name: "Bob", token: "bob-dev-token" },
+  {
+    id: "0f5551bd-10be-41dc-bd28-827ed4b49a67",
+    username: "alice",
+    name: "Alice",
+    token: "alice-dev-token",
+  },
+  {
+    id: "1ba1e239-12d8-4b8f-8d8f-d9e04e76ca8e",
+    username: "bob",
+    name: "Bob",
+    token: "bob-dev-token",
+  },
 ];
