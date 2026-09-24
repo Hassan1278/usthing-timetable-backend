@@ -97,7 +97,7 @@ serializer, and [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545) for the forma
 | `schedule` | Timed or all-day schedule | User |
 | `recurrence` | Optional rule describing repeated occurrences | User |
 | `exceptions` | Cancelled or modified occurrences of a series | Dedicated authenticated operations |
-| `emailNotifications` | Whether email is enabled and when reminders are due | User; server resolves defaults |
+| `emailNotifications` | Reserved notification settings; currently always disabled | Server enforces disabled policy |
 | `uid` | Stable calendar identity used for ICS export | Server |
 | `revision` | Integer used to detect stale edits, starting at 1 | Server |
 | `createdAt` | Creation timestamp | Server |
@@ -259,57 +259,27 @@ returns a conflict message; a detailed conflict-list response is future work.
 Current checks cover normal events and every effective recurring occurrence,
 including self-overlap, cancellations and modified schedules.
 
-## Email notifications
+## Email notifications (disabled)
 
-Disabled:
+The optional `emailNotifications` field is retained for future development.
+All event types, including appointments, default to `{ "enabled": false }`.
+An explicit `{ "enabled": true }`, with or without timings, returns 400:
+"Email notifications are not available yet." This applies to POST, parent PATCH
+and occurrence PATCH, regardless of allowConflicts. False must not include timings.
+Omitted PATCH settings preserve the existing disabled value.
 
-```json
-{ "enabled": false }
-```
+The future-capable input/storage types remain; structural validation can recognize
+an enabled setting, but the central `assertEmailDisabled` business rule rejects it.
+The same rule guards default resolution and effective occurrence validation.
+No provider, sender, scheduler or delivery plan is part of the current scope.
 
-Enabled with default timings:
-
-```json
-{ "enabled": true }
-```
-
-Enabled with custom timings:
-
-```json
-{ "enabled": true, "minutesBefore": [1440, 120] }
-```
-
-- `enabled` is a boolean. When false, `minutesBefore` is not accepted.
-- When true and timings are omitted, resolve defaults to `[1440, 120]`:
-  24 hours and 2 hours before the occurrence.
-- Custom timings contain 1–3 unique integers from 0 to 10080 inclusive.
-  Zero means at the start; 10080 means seven days before.
-- For manual creation, an omitted `emailNotifications` field enables the
-  defaults for appointments and disables email for other event types.
-- Explicit settings always override event-type defaults. A class can have
-  emails enabled, and an appointment can have them disabled.
-- Store enabled notifications with their resolved timings. Defaults must not
-  be recalculated whenever the event is read.
-- In a partial update, an omitted notification field leaves settings unchanged.
-  A supplied notification object replaces the previous settings. Changing
-  `eventType` alone does not reset reminders.
-- Skip reminder times already passed when an event is created. All-day reminders
-  use 09:00 in `Asia/Hong_Kong` as their reference time.
-- Imported events default to backend email disabled. Imported calendar alarms
-  do not authorize sending backend emails.
-- The recipient comes from the authenticated account configuration, never from
-  an event request. Recipient configuration and delivery are later work.
-
-A background worker will handle delivery and recheck that the event and reminder
-still exist before sending. Creating an event does not itself send an email.
-
-`src/events/domain/defaults.ts` implements reminder defaults for validated manual
-create requests. `applyCreateEventDefaults` returns a new event object with
-resolved email settings and leaves its input unchanged. The creation service
-calls it after validation and before storage. It does not validate untrusted input, schedule
-emails, or apply update/import omission rules. The update service preserves
-omitted settings and uses the shared `resolveEmailNotifications` function only
-for explicitly supplied notification settings. Import remains future work.
+`src/events/services/disable-email.ts` runs before application readiness. Its
+idempotent migration disables legacy parent and occurrence-override settings.
+It archives previous settings/timings in the internal `emailNotificationArchive`
+field, preserves other event/override fields, updates updatedAt and increments
+revision atomically per document. Already-disabled documents are untouched.
+The response mapper never exposes this archive; it is not accepted in requests.
+The migration takes effect on the next app startup against that database.
 
 ## Example create request
 
@@ -412,7 +382,7 @@ serialize competing calendar writes.
 
 Base CRUD, input validation, defaults, storage types, indexes and tests are
 implemented. Basic backend conflict rejection is also implemented. Remaining
-milestones include reminder delivery. Recurrence and ICS export are implemented;
+submission work excludes email delivery. Recurrence and ICS export are implemented;
 ICS import is outside the current scope. API
 container setup is implemented and verified; results are recorded in
 [container verification](container-verification.md). Each milestone includes tests and documentation updates.

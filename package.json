@@ -1,9 +1,9 @@
 {
   "type": "module",
-  "name": "template-api",
+  "name": "usthing-timetable-api",
   "version": "0.0.0",
   "private": true,
-  "description": "A simple, singular Fastify + TypeScript + MongoDB service template for USThing, running on Bun.",
+  "description": "Custom timetable API with owned events, recurring schedules and ICS export, built with Fastify, TypeScript and MongoDB.",
   "main": "src/app.ts",
   "directories": {
     "test": "test"

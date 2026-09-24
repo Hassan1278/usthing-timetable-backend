@@ -41,8 +41,6 @@ const app: FastifyPluginAsync<AppOptions> = async (
   fastify,
   opts,
 ): Promise<void> => {
-  // Place here your custom code!
-
   // Register CORS
   await fastify.register(cors, {
     origin: "*",
@@ -73,7 +71,6 @@ const app: FastifyPluginAsync<AppOptions> = async (
         },
       ],
       tags: [
-        { name: "Example", description: "Example endpoints" },
         { name: "Auth", description: "Auth endpoints" },
         { name: "Events", description: "Custom timetable events" },
       ],
@@ -94,8 +91,6 @@ const app: FastifyPluginAsync<AppOptions> = async (
   });
   await fastify.register(swaggerUi);
   await fastify.register(scalarApiReference);
-
-  // Do not touch the following lines
 
   // This loads all plugins defined in plugins
   // those should be support plugins that are reused

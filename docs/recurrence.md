@@ -74,7 +74,7 @@ cancelled. Timed identities require a timestamp; all-day identities require a
 date. Re-editing a moved occurrence keeps using its **original** identity.
 
 Occurrence PATCH accepts title, description, location, eventType, schedule and
-emailNotifications; supplied nested objects replace their previous overrides.
+emailNotifications (currently only enabled: false); supplied nested objects replace their previous overrides.
 Other overrides are retained. It cannot change ownership, recurrence, revision
 or allowConflicts. Schedule kind must remain the same as the parent. Editing a
 cancelled occurrence reactivates it. A moved occurrence may lie beyond the

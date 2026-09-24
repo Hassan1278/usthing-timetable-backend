@@ -684,3 +684,149 @@ test("mixed-schedule conflict checks remain correct at the supported year bounda
     409,
   );
 });
+
+test("occurrence edits cannot enable email, even when conflicts are permitted", async () => {
+  const series = await create({ ...input, allowConflicts: true });
+  for (const emailNotifications of [
+    { enabled: true },
+    { enabled: true, minutesBefore: [60] },
+  ])
+    await exception(
+      series.id,
+      "2026-10-12T10:00:00Z",
+      1,
+      "PATCH",
+      { emailNotifications },
+      400,
+    );
+  assert.equal(
+    (await app.inject({ url: `/events/${series.id}`, headers })).json()
+      .revision,
+    1,
+  );
+  const updated = await exception(
+    series.id,
+    "2026-10-12T10:00:00Z",
+    1,
+    "PATCH",
+    { emailNotifications: { enabled: false } },
+  );
+  assert.equal(updated.revision, 2);
+});
+
+test("email migration disables legacy parent and override settings atomically and is idempotent", async () => {
+  const { disableLegacyEmailNotifications } = await import(
+    "../../../src/events/services/disable-email.js"
+  );
+  const series = await create();
+  const enabled = { enabled: true as const, minutesBefore: [60, 0] };
+  await app.collections.events.updateOne(
+    { _id: new ObjectId(series.id) },
+    {
+      $set: {
+        emailNotifications: enabled,
+        exceptions: [
+          {
+            originalStart: "2026-10-12T10:00:00.000Z",
+            cancelled: false,
+            patch: {
+              title: "Keep title",
+              emailNotifications: { enabled: true, minutesBefore: [120] },
+            },
+          },
+        ],
+      },
+    },
+  );
+  await disableLegacyEmailNotifications(app.collections.events);
+  const stored = await app.collections.events.findOne({
+    _id: new ObjectId(series.id),
+  });
+  assert.ok(stored);
+  assert.deepStrictEqual(stored.emailNotifications, { enabled: false });
+  assert.equal(stored.revision, 2);
+  assert.deepStrictEqual(stored.emailNotificationArchive?.settings, enabled);
+  assert.equal(
+    stored.emailNotificationArchive?.overrides[0]?.settings.enabled,
+    true,
+  );
+  const exception = stored.exceptions?.[0];
+  assert.ok(exception && !exception.cancelled);
+  assert.equal(exception.patch.title, "Keep title");
+  assert.deepStrictEqual(exception.patch.emailNotifications, {
+    enabled: false,
+  });
+  const read = await app.inject({ url: `/events/${series.id}`, headers });
+  assert.equal(read.json().emailNotificationArchive, undefined);
+  assert.equal((await list()).items[0].emailNotifications.enabled, false);
+  await disableLegacyEmailNotifications(app.collections.events);
+  assert.deepStrictEqual(
+    await app.collections.events.findOne({ _id: stored._id }),
+    stored,
+  );
+  await patch(series.id, 1, { title: "Stale" }, 412);
+});
+
+test("email migration handles normal events and override-only settings and leaves disabled events unchanged", async () => {
+  const { disableLegacyEmailNotifications } = await import(
+    "../../../src/events/services/disable-email.js"
+  );
+  const { recurrence: _, ...single } = input;
+  const normal = await create({ ...single, allowConflicts: true });
+  const disabled = await create({ ...single, allowConflicts: true });
+  const series = await create({ ...input, allowConflicts: true });
+  const normalId = new ObjectId(normal.id);
+  const disabledId = new ObjectId(disabled.id);
+  const seriesId = new ObjectId(series.id);
+  const unchanged = await app.collections.events.findOne({ _id: disabledId });
+  await app.collections.events.updateOne(
+    { _id: normalId },
+    {
+      $set: { emailNotifications: { enabled: true, minutesBefore: [1440] } },
+      $unset: { exceptions: "" },
+    },
+  );
+  await app.collections.events.updateOne(
+    { _id: seriesId },
+    {
+      $set: {
+        exceptions: [
+          {
+            originalStart: "2026-10-12T10:00:00.000Z",
+            cancelled: false,
+            patch: {
+              emailNotifications: { enabled: true, minutesBefore: [120] },
+            },
+          },
+        ],
+      },
+    },
+  );
+  await disableLegacyEmailNotifications(app.collections.events);
+  const migrated = await app.collections.events.findOne({ _id: normalId });
+  assert.ok(migrated);
+  assert.deepStrictEqual(migrated.emailNotifications, { enabled: false });
+  assert.equal("exceptions" in migrated, false);
+  assert.equal(migrated.revision, 2);
+  assert.deepStrictEqual(migrated.emailNotificationArchive?.settings, {
+    enabled: true,
+    minutesBefore: [1440],
+  });
+  const overrideOnly = await app.collections.events.findOne({ _id: seriesId });
+  assert.ok(overrideOnly);
+  assert.equal(overrideOnly.revision, 2);
+  const override = overrideOnly.exceptions?.[0];
+  assert.ok(override && !override.cancelled);
+  assert.deepStrictEqual(override.patch.emailNotifications, { enabled: false });
+  assert.deepStrictEqual(
+    overrideOnly.emailNotificationArchive?.overrides[0]?.settings,
+    {
+      enabled: true,
+      minutesBefore: [120],
+    },
+  );
+  assert.deepStrictEqual(
+    await app.collections.events.findOne({ _id: disabledId }),
+    unchanged,
+  );
+});

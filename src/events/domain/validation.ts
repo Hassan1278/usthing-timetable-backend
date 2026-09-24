@@ -1,4 +1,7 @@
-import type { CreateEventInput } from "../schemas/event.js";
+import type {
+  CreateEventInput,
+  EmailNotificationsInput,
+} from "../schemas/event.js";
 
 /** A business-rule failure that the HTTP layer can map to a 400 response. */
 export class EventValidationError extends Error {
@@ -8,11 +11,22 @@ export class EventValidationError extends Error {
   }
 }
 
+/** One policy shared by create, parent edits, and occurrence overrides. */
+export function assertEmailDisabled(
+  settings: EmailNotificationsInput | undefined,
+): void {
+  if (settings?.enabled)
+    throw new EventValidationError(
+      "Email notifications are not available yet. Set enabled to false or omit the setting.",
+    );
+}
+
 /**
  * Check a complete event after schema validation, including merged updates.
  * The timetable is fixed to Asia/Hong_Kong; offsets only identify instants.
  */
 export function validateEvent(input: CreateEventInput): void {
+  assertEmailDisabled(input.emailNotifications);
   const { schedule } = input;
 
   if (schedule.kind === "timed") {

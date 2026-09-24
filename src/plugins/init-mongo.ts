@@ -1,9 +1,13 @@
 import mongodb from "@fastify/mongodb";
 import type { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import type { Collection, Document } from "mongodb";
-import packageJson from "../../package.json" with { type: "json" };
+import type { Collection } from "mongodb";
+
+// Keep the established database name independent of package branding.
+const DEFAULT_DATABASE_NAME = "template-api";
+
 import type { EventDocument } from "../events/domain/model.js";
+import { disableLegacyEmailNotifications } from "../events/services/disable-email.js";
 
 /**
  * Options for {@link resolveMongoUri} and {@link mongoPlugin}.
@@ -24,7 +28,7 @@ export type ResolveMongoUriOptions = {
 /** The Compose MongoDB URI used in production when none is configured. */
 const PRODUCTION_DEFAULT_URI = "mongodb://localhost:27018";
 
-// The stdlib URL parser covers the single-host `mongodb://` URIs this template
+// The stdlib URL parser covers the single-host `mongodb://` URIs this service
 // uses; multi-host seed lists would need a MongoDB-specific parser.
 function parseMongoConnectionString(uri: string): URL {
   let parsed: URL;
@@ -168,23 +172,20 @@ export type InitMongoPluginOptions = {
  */
 export default fp<InitMongoPluginOptions>(async (fastify, opts) => {
   await fastify.register(mongoPlugin, {
-    databaseName: packageJson.name,
+    databaseName: DEFAULT_DATABASE_NAME,
     mongoUri: opts.mongoUri,
     mongoTestUri: opts.mongoTestUri,
     test: opts.test,
   });
 
   fastify.addHook("onReady", async () => {
-    // Initialize the MongoDB database.
-    // Add your collections here and create the indexes you need.
+    // Prepare the application collection and indexes before accepting requests.
     const db = fastify.mongo.db;
     if (!db) {
       throw new Error(
         "MongoDB database handle is unavailable; mongoPlugin did not connect. Check MONGO_URI and the MongoDB server.",
       );
     }
-    const example = db.collection<Document>("example");
-    await example.createIndex({ example: 1 });
     const events = db.collection<EventDocument>("events");
     // The ownerId prefix also supports listing an owner's events.
     await events.createIndex(
@@ -202,14 +203,14 @@ export default fp<InitMongoPluginOptions>(async (fastify, opts) => {
         name: "events_owner_all_day_start",
       },
     ]);
-    fastify.decorate("collections", { example, events });
+    await disableLegacyEmailNotifications(events);
+    fastify.decorate("collections", { events });
   });
 });
 
 declare module "fastify" {
   export interface FastifyInstance {
     collections: {
-      example: Collection<Document>;
       events: Collection<EventDocument>;
     };
   }

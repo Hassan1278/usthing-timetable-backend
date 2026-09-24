@@ -377,7 +377,7 @@ const auth: FastifyPluginAsync<AuthPluginOptions> = async (fastify, opts) => {
  * Fastify plugin that installs the internal bearer-token authentication.
  *
  * Static users live in `src/auth/users.ts`; configure them via the `users`
- * plugin option. For usage, see `src/routes/auth-example/index.ts`.
+ * plugin option. For usage, see `src/routes/events/index.ts`.
  */
 export default fp(auth, { name: "auth" });
 

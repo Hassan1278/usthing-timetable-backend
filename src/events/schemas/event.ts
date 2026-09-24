@@ -1,7 +1,7 @@
 import { type Static, Type } from "typebox";
 import { RecurrenceSchema } from "./recurrence.js";
 
-/** Validates input; the event service resolves omitted timings when enabled. */
+/** Future-compatible shape; business validation currently rejects enabled: true. */
 export const EmailNotificationsSchema = Type.Union([
   Type.Object(
     { enabled: Type.Literal(false) },
@@ -73,7 +73,11 @@ export const CreateEventSchema = Type.Object(
     }),
     schedule: ScheduleSchema,
     recurrence: Type.Optional(RecurrenceSchema),
-    emailNotifications: Type.Optional(EmailNotificationsSchema),
+    emailNotifications: Type.Optional({
+      ...EmailNotificationsSchema,
+      description:
+        "Reserved for future development. Currently only enabled: false is supported; omission defaults to false.",
+    }),
   },
   { additionalProperties: false },
 );

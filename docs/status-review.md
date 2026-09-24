@@ -5,7 +5,7 @@ reminder settings, paginated calendar reads, revision-protected mutations,
 request rate limits, ICS export, daily/weekly recurrence, individual exceptions,
 and backend overlap rejection across complete finite series.
 The API and MongoDB are containerized and verified together. Task 2 remains
-unstarted. Email delivery and template cleanup remain outstanding.
+unstarted. Email delivery is disabled and deferred; template cleanup is complete.
 
 ## How a request works
 
@@ -32,7 +32,7 @@ validation enforce actual request values. Types do not install database validato
 | [src/options.ts](../src/options.ts) | Loads database/auth configuration and positive-integer rate settings. Invalid configured limits fail startup. |
 | [src/auth/users.ts](../src/auth/users.ts) | Defines the two sample identities and bearer tokens. Stable UUIDs identify owners independently of usernames. These users are stored in code, not MongoDB. |
 | [src/plugins/auth.ts](../src/plugins/auth.ts) | Template authentication extended with stable IDs. Hashes tokens for constant-time digest comparison, populates request.user and protects withAuth scopes. The public identity excludes the token. Much of the file implements TypeScript typing and HTTP error/schema integration. |
-| [src/plugins/init-mongo.ts](../src/plugins/init-mongo.ts) | Connects to configured or temporary MongoDB, registers typed events collection, and creates UID, pagination and range indexes. The inherited example collection remains. |
+| [src/plugins/init-mongo.ts](../src/plugins/init-mongo.ts) | Connects to configured or temporary MongoDB, registers typed events collection, and creates UID, pagination and range indexes. Only the events collection is registered. The legacy database name is retained for data compatibility. |
 | [src/plugins/sensible.ts](../src/plugins/sensible.ts) | Registers standard HTTP error helpers and their shared schema. |
 | [src/rate-limits.ts](../src/rate-limits.ts) | Applies IP checks before auth and read/write checks after auth, returning 429 and retry headers when exhausted. |
 | [src/rate-limit-store.ts](../src/rate-limit-store.ts) | Bounded, fixed-window in-memory counters. Independent snapshots prevent simultaneous requests from changing each other's observed counts. |
@@ -46,8 +46,9 @@ validation enforce actual request values. Types do not install database validato
 | [src/events/schemas/query.ts](../src/events/schemas/query.ts) | Validates event IDs, date-range query values and cursor pagination parameters. |
 | [src/events/schemas/mutation.ts](../src/events/schemas/mutation.ts) | Derives a nonempty partial PATCH body and validates the supported If-Match header shape. Nested objects remain whole replacements. |
 | [src/events/domain/validation.ts](../src/events/domain/validation.ts) | Rejects equal or reversed intervals after structural validation. Past events are allowed. |
-| [src/events/domain/defaults.ts](../src/events/domain/defaults.ts) | Resolves email settings. Appointments default to reminders 1440 and 120 minutes before; other types default to off. Explicit choices override defaults. |
+| [src/events/domain/defaults.ts](../src/events/domain/defaults.ts) | Defaults all events to email disabled and rejects enabling it. Future-capable storage types remain. |
 | [src/events/domain/model.ts](../src/events/domain/model.ts) | Describes stored documents: ObjectId, owner, details, resolved settings, calendar UID, revision and timestamps. Timed values use Date; all-day values use date strings. Recurrence ends are resolved and exceptions are embedded. |
+| [src/events/services/disable-email.ts](../src/events/services/disable-email.ts) | Idempotent startup migration disables legacy settings, archives preferences and increments affected revisions. |
 | [src/events/services/events.ts](../src/events/services/events.ts) | Creates and retrieves owned events. Implements bounded, cursor-paginated listing and optional Hong Kong range filtering. Calls conflict checking inside the owner's write lock before inserting. |
 | [src/events/services/mutations.ts](../src/events/services/mutations.ts) | Merges PATCH input with stored state, validates the whole candidate, preserves omitted settings and checks overlaps. Updates/deletes use atomic owner-and-revision predicates. |
 | [src/events/services/conflicts.ts](../src/events/services/conflicts.ts) | Checks all effective finite occurrences, including self-overlap, mixed schedules and exceptions. Bounded scans fail closed; the current parent is excluded when editing. |
@@ -55,8 +56,6 @@ validation enforce actual request values. Types do not install database validato
 | [src/events/http/response.ts](../src/events/http/response.ts) | Defines public response schemas and explicitly maps storage into JSON, omitting internal ownership and renaming _id to id. |
 | [src/routes/health/index.ts](../src/routes/health/index.ts) | Returns readiness based on a bounded MongoDB ping, with generic failure responses. |
 | [src/routes/events/index.ts](../src/routes/events/index.ts) | Connects HTTP methods to auth, strict validation, services and documented status codes. Routes carry transport concerns; services carry event behavior. |
-| [src/routes/auth-example/index.ts](../src/routes/auth-example/index.ts) | Inherited protected demonstration route. Useful while learning; remove or justify in final submission cleanup. |
-| [src/routes/example/index.ts](../src/routes/example/index.ts) | Inherited public demonstration routes. Not an event feature; remove with related template scaffolding before final polish. |
 
 ## Tests
 
@@ -72,7 +71,7 @@ interfere with each other. Dedicated rate tests use small budgets.
 | [test/events/recurrence.test.ts](../test/events/recurrence.test.ts) | Optional rules on either schedule, strict values, inclusive date bounds, 12-month defaults, leap days and HK date conversion. |
 | [test/routes/events/export.test.ts](../test/routes/events/export.test.ts) | Download format, ownership, text escaping, HK boundaries, revision metadata, output limits and shared read limits. |
 | [test/events/schemas.test.ts](../test/events/schemas.test.ts) | Valid inputs, bad dates, bounds, protected fields, email rules and rejection of the old isOptional field. |
-| [test/events/defaults.test.ts](../test/events/defaults.test.ts) | Default reminders, explicit overrides and input/array independence. |
+| [test/events/defaults.test.ts](../test/events/defaults.test.ts) | Disabled defaults for every event type, rejection of enabled settings and input preservation. |
 | [test/events/validation.test.ts](../test/events/validation.test.ts) | Interval ordering, equivalent offsets, all-day boundaries and unchanged input. |
 | [test/events/storage.test.ts](../test/events/storage.test.ts) | MongoDB date round-trips and UID uniqueness per owner. |
 | [test/routes/events/create.test.ts](../test/routes/events/create.test.ts) | POST authentication, strict validation, server-derived ownership, defaults and public responses. |
@@ -82,17 +81,16 @@ interfere with each other. Dedicated rate tests use small budgets.
 | [test/routes/events/rate-limits.test.ts](../test/routes/events/rate-limits.test.ts) | Shared POST/PATCH/DELETE budget and proof that rejected requests do not mutate MongoDB. |
 | [test/rate-limits.test.ts](../test/rate-limits.test.ts) | IP/user separation, endpoint sharing, forwarded-IP spoofing, IPv6 subnet grouping, bursts and expiry. |
 | [test/options.test.ts](../test/options.test.ts) | Configuration parsing and rejected invalid rate settings. |
-| [test/mongo.test.ts](../test/mongo.test.ts) | MongoDB startup, readiness success/failure and example-collection operations. |
+| [test/mongo.test.ts](../test/mongo.test.ts) | MongoDB startup, readiness success/failure and checks that template routes/collections are absent. |
 | [test/init-mongo.test.ts](../test/init-mongo.test.ts) | URI/database defaults and connection-string handling. |
-| [test/routes/auth-example.test.ts](../test/routes/auth-example.test.ts) | Stable identities, auth success/failure, safe public identity and development bypass. |
+| [test/routes/auth.test.ts](../test/routes/auth.test.ts) | Stable identities, auth success/failure, safe public identity and development bypass. |
 | [test/routes/auth-schema.test.ts](../test/routes/auth-schema.test.ts) | Auth response documentation and preservation of standard validation errors. |
-| [test/routes/example.test.ts](../test/routes/example.test.ts) | Template route and HTTP error behavior. |
 
 ## Configuration and documentation
 
 | File | Purpose and status |
 | --- | --- |
-| [package.json](../package.json) | Runtime/development dependencies and commands. Bun runs code/tests, TypeScript checks types, Biome checks style. The package name is still template-api. |
+| [package.json](../package.json) | Runtime/development dependencies and commands. Bun runs code/tests, TypeScript checks types, Biome checks style. The package name is usthing-timetable-api. |
 | [bun.lock](../bun.lock) | Locks resolved dependency versions for reproducible installs. |
 | [tsconfig.json](../tsconfig.json), [test/tsconfig.json](../test/tsconfig.json) | Strict source/test type checking without emitted build files. |
 | [biome.json](../biome.json) | Consistent formatting, imports and lint rules. |
@@ -103,7 +101,7 @@ interfere with each other. Dedicated rate tests use small budgets.
 | [compose.yaml](../compose.yaml) | Runs one API and MongoDB with health checks, local ports and a persistent database volume. |
 | [README.md](../README.md) | Startup commands, endpoint examples, errors, concurrency/rate behavior and current limitations. |
 | [docs/recurrence.md](recurrence.md) | Recurrence API examples, exception semantics, resource limits and export behavior. |
-| [docs/event-model.md](event-model.md) | Explains data representations, domain rules and ICS export, recurrence and planned email behavior. Planned sections are not implemented features. |
+| [docs/event-model.md](event-model.md) | Explains data representations, domain rules and ICS export, recurrence and disabled email policy. Planned sections are not implemented features. |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Template development conventions and required checks. |
 | [docs/status-review.md](status-review.md) | This dated review; update after major milestones rather than treating it as a live feature list. |
 
@@ -132,19 +130,21 @@ interfere with each other. Dedicated rate tests use small budgets.
 - API and MongoDB containerization is complete. Actual Docker build, readiness,
   CRUD and persistence after container recreation are verified. This is a local
   test deployment; process-local locks and counters still require one API instance.
-- Remove leftover template example routes/collection/tests and update package
-  branding before submission. Finish documentation against actual implemented
-  scope; do not advertise email delivery as complete.
+- Template routes and example collection wiring are removed. Useful auth tests
+  use test-only routes. Existing database data has not been deleted.
+- Finish submission documentation; email delivery is outside the current scope.
 - Task 2's PR review remains separate and unstarted; its patch must be supplied.
 
-Next implementation order: finish template cleanup and documentation, complete
+Next implementation order: finish documentation, complete
 Task 2, and verify submission instructions. Email delivery can
 remain future work; ICS export fulfills a suggested calendar extra. Deadline from the
 brief: 26 September 2026, 23:59 HKT.
 
 ## Verification and commit
 
-At this review, all 371 tests pass, along with TypeScript and Biome checks.
+After template cleanup and disabling email notifications, all 370 tests pass, along with TypeScript
+and Biome checks. Three obsolete template-only tests were removed; auth checks
+were retained with test-only routes.
 The production Docker image was built and smoke-tested for recurrence creation,
 range reads, cancellation, restart persistence, owner isolation, ICS export,
 restoration and whole-series deletion. Tests include concurrency behavior but are not a production load test.
@@ -154,5 +154,5 @@ approval. No commit was made by the assistant for this milestone.
 Suggested commit message:
 
 ```text
-feat: support recurring calendars and occurrence exceptions
+fix: disable unfinished email notifications
 ```

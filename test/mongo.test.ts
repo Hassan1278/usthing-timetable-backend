@@ -1,5 +1,5 @@
 // Proves the default MongoDB wiring: with no MONGO_URI configured, building
-// the app spawns an in-memory MongoDB and prepares the `example` collection —
+// the app spawns an in-memory MongoDB and prepares the `events` collection —
 // no external services needed.
 //
 // The app plugin is wrapped in `fastify-plugin` at the registration site (the
@@ -14,26 +14,6 @@ import Fastify from "fastify";
 import fp from "fastify-plugin";
 import App from "../src/app.js";
 
-test("the example collection roundtrips documents in the in-memory MongoDB", async () => {
-  // pluginTimeout covers the first-run download of the in-memory MongoDB
-  // binary, which can outlast Fastify's 10s default.
-  const app = Fastify({ pluginTimeout: 5 * 60 * 1000 });
-  onTestFinished(() => app.close());
-
-  await app.register(fp(App), {
-    mongoUri: undefined,
-    mongoTestUri: undefined,
-    authSkip: true,
-  });
-  await app.ready();
-
-  const inserted = await app.collections.example.insertOne({ example: 42 });
-  const found = await app.collections.example.findOne({
-    _id: inserted.insertedId,
-  });
-  assert.equal(found?.example, 42);
-});
-
 test("the app reports ready with the collections decorated", async () => {
   const app = Fastify({ pluginTimeout: 5 * 60 * 1000 });
   onTestFinished(() => app.close());
@@ -45,7 +25,13 @@ test("the app reports ready with the collections decorated", async () => {
   });
   await app.ready();
 
-  assert.ok(app.collections);
+  assert.ok(app.collections.events);
+  assert.deepStrictEqual(Object.keys(app.collections), ["events"]);
+  assert.equal(app.mongo.db?.databaseName, "template-api");
+  for (const url of ["/example", "/example/error", "/auth-example"]) {
+    assert.equal((await app.inject({ url })).statusCode, 404);
+    assert.ok(!app.swagger().paths?.[url]);
+  }
   assert.ok(typeof app.withAuth === "function");
   const healthy = await app.inject({ url: "/health" });
   assert.equal(healthy.statusCode, 200);

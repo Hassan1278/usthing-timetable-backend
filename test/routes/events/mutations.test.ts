@@ -97,27 +97,32 @@ test("changing event type preserves existing reminders", async () => {
   );
 });
 
-test("notification replacements resolve defaults, replace timings and allow disabling", async () => {
-  const changes = [
-    { enabled: true, minutesBefore: [30, 0] },
+test("PATCH rejects enabling email and permits explicit disabling", async () => {
+  for (const emailNotifications of [
     { enabled: true },
-    { enabled: false },
-  ];
-  const expected = [
-    changes[0],
-    { enabled: true, minutesBefore: [1440, 120] },
-    changes[2],
-  ];
-  for (const [index, emailNotifications] of changes.entries()) {
+    { enabled: true, minutesBefore: [30, 0] },
+  ]) {
+    const before = await stored();
     const response = await app.inject({
       method: "PATCH",
       url: `/events/${event.id}`,
-      headers: { ...auth, "if-match": `"${index + 1}"` },
+      headers,
       payload: { emailNotifications },
     });
-    assert.equal(response.statusCode, 200, response.payload);
-    assert.deepStrictEqual(response.json().emailNotifications, expected[index]);
+    assert.equal(response.statusCode, 400, response.payload);
+    assert.match(response.json().message, /not available yet/);
+    assert.deepStrictEqual(await stored(), before);
   }
+  const response = await app.inject({
+    method: "PATCH",
+    url: `/events/${event.id}`,
+    headers,
+    payload: { emailNotifications: { enabled: false } },
+  });
+  assert.equal(response.statusCode, 200, response.payload);
+  assert.deepStrictEqual(response.json().emailNotifications, {
+    enabled: false,
+  });
 });
 
 test("replacing a timed schedule with all-day removes the old timed fields", async () => {

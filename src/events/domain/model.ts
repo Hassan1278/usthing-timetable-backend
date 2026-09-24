@@ -1,4 +1,5 @@
 import type { ObjectId } from "mongodb";
+import type { EmailNotificationsInput } from "../schemas/event.js";
 import type { EventException } from "../schemas/exception.js";
 import type { ResolvedRecurrence } from "../schemas/recurrence.js";
 import type { EventWithDefaults } from "./defaults.js";
@@ -19,6 +20,14 @@ export type EventDocument = Omit<
   _id: ObjectId;
   recurrence?: ResolvedRecurrence;
   exceptions?: EventException[];
+  /** Archived by the email-disable migration; internal-only future preferences. */
+  emailNotificationArchive?: {
+    settings: EmailNotificationsInput;
+    overrides: Array<{
+      originalStart: string;
+      settings: EmailNotificationsInput;
+    }>;
+  };
   /** Immutable account ID taken from the authenticated identity. */
   ownerId: string;
   schedule: StoredSchedule;

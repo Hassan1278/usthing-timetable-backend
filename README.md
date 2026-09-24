@@ -1,4 +1,4 @@
-# template-api
+# USThing Timetable API
 
 A small Fastify + TypeScript service with MongoDB built in. Bun runs it and Biome keeps it tidy. With no configuration at all, dev and tests spin up a throwaway in-memory MongoDB, so `bun install && bun run dev` is genuinely all it takes to get going.
 
@@ -17,7 +17,9 @@ This builds the API image and starts it after MongoDB is healthy. The API is at
 http://localhost:3000 and documentation at http://localhost:3000/documentation.
 `/health` returns `200 { "status": "ok" }` when MongoDB responds and `503` when
 unavailable. The containers use their own network: the API connects to
-`mongodb://mongodb:27017/template-api`, not to localhost.
+`mongodb://mongodb:27017/template-api`, not to localhost. The database name
+remains `template-api` for compatibility with existing data, independently of the
+package name `usthing-timetable-api`. Cleanup does not drop existing collections.
 
 The Dockerfile uses pinned Bun 1.4.2, frozen production dependencies, and a
 non-root runtime user. Bun executes TypeScript directly. The build context
@@ -96,11 +98,14 @@ The server derives ownership from the token. Unexpected fields (including
 `400`. Missing or unknown credentials return `401`; malformed authorization
 headers return `400`. Rejected requests do not create an event.
 
-Appointments default to email reminders 24 hours and 2 hours before; other
-event types default to email disabled. Explicit `emailNotifications` settings
-override these defaults. This endpoint only stores settings; it does not send
-email. Event CRUD and daily/weekly recurrence are implemented; email delivery
-remains unimplemented. See [recurrence behavior and API examples](docs/recurrence.md)
+Email delivery is unavailable. Every event type defaults to
+`emailNotifications: { "enabled": false }`. Explicit `enabled: true` returns
+400 on creation, whole-event edits and occurrence edits. The optional field and
+future-compatible database types remain, but no reminders are scheduled or sent.
+On startup, legacy enabled settings are disabled and their preferences archived
+internally; affected event revisions increment. See the event model for details.
+
+See [recurrence behavior and API examples](docs/recurrence.md)
 for finite series, calendar occurrences, cancellation, overrides and restoration.
 
 ### Exporting an ICS calendar
@@ -290,17 +295,17 @@ Everything here is optional. Copy `.env.example` to `.env` and set what you need
 Users and their tokens live in `src/auth/users.ts`. There are two sample users, alice and bob, and their tokens act as passwords, so replace them before deploying anything real. Protected routes want a bearer header:
 
 ```sh
-curl http://localhost:3000/auth-example
+curl http://localhost:3000/events
 # 401 Missing Authorization Header
 
-curl -H "Authorization: Bearer alice-dev-token" http://localhost:3000/auth-example
-# alice
+curl -H "Authorization: Bearer alice-dev-token" http://localhost:3000/events
+# JSON containing Alice's events
 ```
 
 To protect your own routes, wrap them in a `fastify.withAuth` scope. Everything inside is protected, the auth error responses get documented for you, and `request.user` is typed non-null:
 
 ```typescript
-const authExample: FastifyPluginAsync = async (
+const protectedRoutes: FastifyPluginAsync = async (
   fastify: FastifyTypebox,
 ): Promise<void> => {
   fastify.withAuth(async (fastify) => {
@@ -347,13 +352,12 @@ src/
   routes/
     events/             # Main event endpoint registration
     health/             # API/database readiness
-    example/            # Remaining template routes
-    auth-example/
 test/
   events/               # Event rules, schemas, storage and recurrence unit tests
   routes/
     events/             # Event HTTP integration tests, grouped by behavior
-    ...                 # Template and authentication route tests
+    auth.test.ts        # Auth plugin tests using test-only probe routes
+    auth-schema.test.ts # Auth/OpenAPI contract tests
   ...                   # Application, configuration and database tests
 ```
 
@@ -373,4 +377,4 @@ routes. This keeps moving a helper from accidentally exposing another endpoint.
 
 ## Adding your own stuff
 
-New routes go in a folder under `src/routes/`; the autoload picks them up, and an exported `autoPrefix` controls the URL prefix if you want one. New collections and their indexes go in `src/plugins/init-mongo.ts`, following the `example` pattern, and show up as `fastify.collections.<name>`.
+New routes go in a folder under `src/routes/`; the autoload picks them up, and an exported `autoPrefix` controls the URL prefix if you want one. New collections and their indexes go in `src/plugins/init-mongo.ts`, following the `events` pattern, and show up as `fastify.collections.<name>`.
