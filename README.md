@@ -4,9 +4,53 @@ A small Fastify + TypeScript service with MongoDB built in. Bun runs it and Biom
 
 ## What you need
 
-Bun 1.4.2 or newer. Older versions break the MongoDB driver; 1.3.14 will not work. Docker is only worth installing if you want a database that survives restarts.
+Bun 1.4.2 or newer. Older versions break the MongoDB driver; 1.3.14 will not work. Docker Desktop (or Docker Engine with Compose) can run the entire service and a persistent database.
 
-## Running it
+## Running with Docker
+
+```sh
+docker compose up --build -d --wait
+curl http://localhost:3000/health
+```
+
+This builds the API image and starts it after MongoDB is healthy. The API is at
+http://localhost:3000 and documentation at http://localhost:3000/documentation.
+`/health` returns `200 { "status": "ok" }` when MongoDB responds and `503` when
+unavailable. The containers use their own network: the API connects to
+`mongodb://mongodb:27017/template-api`, not to localhost.
+
+The Dockerfile uses pinned Bun 1.4.2, frozen production dependencies, and a
+non-root runtime user. Bun executes TypeScript directly. The build context
+excludes local dependencies, caches, tests and `.env`; Compose passes only the
+explicit runtime settings. MongoDB is pinned to 8.3.4 and keeps data in the
+`mongo_data` named volume. The API waits for database health and has its own
+readiness health check.
+
+```sh
+docker compose ps
+docker compose logs -f api
+docker compose down
+```
+
+`down` removes containers but keeps database data. Running `up --build -d --wait`
+again reuses that volume. **`docker compose down -v` deletes the volume and all
+its events.** Don't use `-v` when testing persistence.
+
+Host ports are loopback-only for this local technical-test setup. Override
+`API_PORT` (default 3000) or `MONGO_HOST_PORT` (default 27018) if occupied. Inside
+the containers, ports remain 3000 and 27017. Compose explicitly disables
+`AUTH_SKIP` and uses the two documented sample accounts. This is a reproducible
+local deployment, not a public deployment with real credentials.
+
+Keep one API replica: conflict locks and rate counters are process-local. Docker
+packages the service but does not turn those mechanisms into distributed locks.
+On Windows, start Docker Desktop and enable the distro under Settings →
+Resources → WSL Integration before running Docker commands from WSL.
+
+See [container verification](docs/container-verification.md) for verification
+status and the persistence check.
+
+## Running locally without the API container
 
 ```sh
 bun install
@@ -16,7 +60,7 @@ bun run dev
 That serves http://localhost:3000. The first run downloads an in-memory MongoDB binary, roughly 150 MB, once. After that it's cached and startup is quick. If you'd rather have persistent data:
 
 ```sh
-docker compose up -d
+docker compose up -d mongodb
 cp .env.example .env
 ```
 

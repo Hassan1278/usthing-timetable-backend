@@ -1,29 +1,39 @@
-# Local development MongoDB for template-api (MONGO_URI points here by
-# default). Without it, dev and tests fall back to an in-memory MongoDB.
-#
-# Start it:
-#
-#   docker compose up -d
-#
-# Stop it:
-#
-#   docker compose stop
-#
-# Reset the data volume:
-#
-#   docker compose down -v
-
+# One API process: overlap locks and rate counters are currently process-local.
+# Start: docker compose up --build -d --wait
+# Stop without removing data: docker compose down
+# docker compose down -v also removes the database volume and all its data.
 services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: usthing-api:local
+    init: true
+    environment:
+      NODE_ENV: production
+      MONGO_URI: mongodb://mongodb:27017/template-api
+      AUTH_SKIP: "false"
+      RATE_LIMIT_IP_MAX: ${RATE_LIMIT_IP_MAX:-120}
+      RATE_LIMIT_READ_MAX: ${RATE_LIMIT_READ_MAX:-120}
+      RATE_LIMIT_WRITE_MAX: ${RATE_LIMIT_WRITE_MAX:-30}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+    ports:
+      - "127.0.0.1:${API_PORT:-3000}:3000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 15s
+
   mongodb:
     image: mongo:8.3.4
-    container_name: template-api-mongo
     ports:
-      - "127.0.0.1:27018:27017"
+      - "127.0.0.1:${MONGO_HOST_PORT:-27018}:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
       retries: 5
       start_period: 20s

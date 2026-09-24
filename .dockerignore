@@ -1,0 +1,9 @@
+# Only files required to install and run the API enter the build context.
+**
+!Dockerfile
+!.dockerignore
+!package.json
+!bun.lock
+!tsconfig.json
+!src/
+!src/**

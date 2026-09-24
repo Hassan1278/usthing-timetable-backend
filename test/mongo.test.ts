@@ -8,7 +8,7 @@
 // this root instance: fastify-cli's `helper.build` keeps them scoped inside
 // the autoloader, invisible to the instance it returns.
 
-import { onTestFinished, test } from "bun:test";
+import { onTestFinished, spyOn, test } from "bun:test";
 import * as assert from "node:assert";
 import Fastify from "fastify";
 import fp from "fastify-plugin";
@@ -47,4 +47,18 @@ test("the app reports ready with the collections decorated", async () => {
 
   assert.ok(app.collections);
   assert.ok(typeof app.withAuth === "function");
+  const healthy = await app.inject({ url: "/health" });
+  assert.equal(healthy.statusCode, 200);
+  assert.deepStrictEqual(healthy.json(), { status: "ok" });
+  assert.ok(app.mongo.db);
+  const command = spyOn(app.mongo.db, "command").mockRejectedValueOnce(
+    new Error("private connection details"),
+  );
+  try {
+    const unavailable = await app.inject({ url: "/health" });
+    assert.equal(unavailable.statusCode, 503);
+    assert.deepStrictEqual(unavailable.json(), { status: "unavailable" });
+  } finally {
+    command.mockRestore();
+  }
 });

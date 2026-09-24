@@ -3,8 +3,8 @@
 The project now implements custom-event CRUD, multi-user ownership, validation,
 reminder settings, paginated calendar reads, revision-protected mutations,
 request rate limits, and backend overlap rejection for non-recurring events.
-It is not yet a complete submission: the API container and Task 2 review are
-missing, and the larger calendar features remain planned.
+The API and MongoDB are containerized and verified together. Task 2 remains
+unstarted, and the larger calendar features remain planned.
 
 ## How a request works
 
@@ -46,6 +46,7 @@ validation enforce actual request values. Types do not install database validato
 | [src/events/conflicts.ts](../src/events/conflicts.ts) | Checks timed/timed, all-day/all-day and mixed overlaps within the same owner's calendar. Uses exclusive ends and excludes the edited event itself. Raises EventConflictError before any conflicting save. |
 | [src/events/write-lock.ts](../src/events/write-lock.ts) | Serializes check-and-write operations per owner in one process. Releases on success or failure and removes idle entries; different owners operate independently. |
 | [src/events/response.ts](../src/events/response.ts) | Defines public response schemas and explicitly maps storage into JSON, omitting internal ownership and renaming _id to id. |
+| [src/routes/health/index.ts](../src/routes/health/index.ts) | Returns readiness based on a bounded MongoDB ping, with generic failure responses. |
 | [src/routes/events/index.ts](../src/routes/events/index.ts) | Connects HTTP methods to auth, strict validation, services and documented status codes. Routes carry transport concerns; services carry event behavior. |
 | [src/routes/auth-example/index.ts](../src/routes/auth-example/index.ts) | Inherited protected demonstration route. Useful while learning; remove or justify in final submission cleanup. |
 | [src/routes/example/index.ts](../src/routes/example/index.ts) | Inherited public demonstration routes. Not an event feature; remove with related template scaffolding before final polish. |
@@ -70,7 +71,7 @@ interfere with each other. Dedicated rate tests use small budgets.
 | [test/routes/events-rate-limits.test.ts](../test/routes/events-rate-limits.test.ts) | Shared POST/PATCH/DELETE budget and proof that rejected requests do not mutate MongoDB. |
 | [test/rate-limits.test.ts](../test/rate-limits.test.ts) | IP/user separation, endpoint sharing, forwarded-IP spoofing, IPv6 subnet grouping, bursts and expiry. |
 | [test/options.test.ts](../test/options.test.ts) | Configuration parsing and rejected invalid rate settings. |
-| [test/mongo.test.ts](../test/mongo.test.ts) | Template MongoDB startup and example-collection operations. |
+| [test/mongo.test.ts](../test/mongo.test.ts) | MongoDB startup, readiness success/failure and example-collection operations. |
 | [test/init-mongo.test.ts](../test/init-mongo.test.ts) | URI/database defaults and connection-string handling. |
 | [test/routes/auth-example.test.ts](../test/routes/auth-example.test.ts) | Stable identities, auth success/failure, safe public identity and development bypass. |
 | [test/routes/auth-schema.test.ts](../test/routes/auth-schema.test.ts) | Auth response documentation and preservation of standard validation errors. |
@@ -86,7 +87,9 @@ interfere with each other. Dedicated rate tests use small budgets.
 | [biome.json](../biome.json) | Consistent formatting, imports and lint rules. |
 | [.gitignore](../.gitignore) | Excludes credentials, dependency folders, caches and coverage. |
 | [.env.example](../.env.example) | Documents database/auth options and default request limits without real secrets. |
-| [compose.yaml](../compose.yaml) | Runs MongoDB with a persistent volume and health check. Does not containerize the API yet. |
+| [Dockerfile](../Dockerfile), [.dockerignore](../.dockerignore) | Builds a non-root Bun runtime with frozen production dependencies and excludes credentials/caches from the build context. |
+| [docs/container-verification.md](container-verification.md) | Records actual Docker startup, CRUD, ownership and volume-persistence verification with repeatable manual steps. |
+| [compose.yaml](../compose.yaml) | Runs one API and MongoDB with health checks, local ports and a persistent database volume. |
 | [README.md](../README.md) | Startup commands, endpoint examples, errors, concurrency/rate behavior and current limitations. |
 | [docs/event-model.md](event-model.md) | Explains data representations, domain rules and planned recurrence/import/email behavior. Planned sections are not implemented features. |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Template development conventions and required checks. |
@@ -112,14 +115,15 @@ interfere with each other. Dedicated rate tests use small budgets.
 - Conflict rejection and rate limiting are implemented extra behavior. The
   planned recurrence, ICS import/export and email delivery are not implemented.
   MCP is an optional alternative, not required alongside every other extra.
-- API Dockerfile/Compose service and an end-to-end container startup check are
-  still required. Only MongoDB is containerized now.
+- API and MongoDB containerization is complete. Actual Docker build, readiness,
+  CRUD and persistence after container recreation are verified. This is a local
+  test deployment; process-local locks and counters still require one API instance.
 - Remove leftover template example routes/collection/tests and update package
   branding before submission. Finish documentation against actual implemented
   scope; do not advertise planned recurrence or email delivery as complete.
 - Task 2's PR review remains separate and unstarted; its patch must be supplied.
 
-Next implementation order: finish API containerization, then the chosen calendar
+Next implementation order: implement the chosen calendar
 extra (recurrence and/or ICS export), follow with remaining promised features as
 scope allows, and complete Task 2 and submission instructions. Deadline from the
 brief: 26 September 2026, 23:59 HKT.
@@ -134,5 +138,5 @@ approval. No commit was made by the assistant for this milestone.
 Suggested commit message:
 
 ```text
-feat: enforce event conflicts and request rate limits
+feat: containerize API and MongoDB with readiness checks
 ```

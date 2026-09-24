@@ -327,8 +327,9 @@ serialize competing calendar writes.
 
 Base CRUD, input validation, defaults, storage types, indexes and tests are
 implemented. Basic backend conflict rejection is also implemented. Remaining
-milestones include recurrence, ICS import/export, reminder delivery and API
-containerization. Each milestone includes tests and documentation updates.
+milestones include recurrence, ICS import/export and reminder delivery. API
+container setup is implemented and verified; results are recorded in
+[container verification](container-verification.md). Each milestone includes tests and documentation updates.
 
 ## Request rate limits
 
