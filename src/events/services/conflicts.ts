@@ -1,12 +1,12 @@
 import type { Collection, ObjectId } from "mongodb";
-import type { EventDocument } from "./model.js";
+import type { EventDocument } from "../domain/model.js";
 import {
   CalendarCapacityError,
   expandEvent,
   interval,
   MAX_EXPANDED_OCCURRENCES,
   MAX_SCANNED_EVENTS,
-} from "./series.js";
+} from "../recurrence/series.js";
 
 export class EventConflictError extends Error {
   constructor() {

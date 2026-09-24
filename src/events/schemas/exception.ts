@@ -1,5 +1,5 @@
 import { type Static, Type } from "typebox";
-import { CreateEventSchema } from "./schemas.js";
+import { CreateEventSchema } from "./event.js";
 
 export const OriginalStartSchema = Type.Union([
   Type.String({ format: "date" }),

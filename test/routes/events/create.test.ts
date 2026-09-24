@@ -4,12 +4,12 @@ import Fastify from "fastify";
 import fp from "fastify-plugin";
 import { ObjectId } from "mongodb";
 import { Compile } from "typebox/compile";
-import App from "../../src/app.js";
+import App from "../../../src/app.js";
 import {
   type EventResponse,
   EventResponseSchema,
-} from "../../src/events/response.js";
-import type { CreateEventInput } from "../../src/events/schemas.js";
+} from "../../../src/events/http/response.js";
+import type { CreateEventInput } from "../../../src/events/schemas/event.js";
 
 const app = Fastify({ pluginTimeout: 5 * 60 * 1000 });
 const responseValidator = Compile(EventResponseSchema);

@@ -5,7 +5,7 @@ import fp from "fastify-plugin";
 import { ObjectId } from "mongodb";
 import App from "../../src/app.js";
 import { users } from "../../src/auth/users.js";
-import type { EventDocument } from "../../src/events/model.js";
+import type { EventDocument } from "../../src/events/domain/model.js";
 
 async function buildApp() {
   const app = Fastify({ pluginTimeout: 5 * 60 * 1000 });

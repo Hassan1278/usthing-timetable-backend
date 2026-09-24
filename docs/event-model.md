@@ -11,12 +11,12 @@ used by application code. Neither automatically creates a MongoDB collection
 validator. MongoDB stores documents in an `events` collection; the database
 plugin configures the collection and indexes separately from these types.
 
-`src/events/model.ts` defines the current `EventDocument` storage type. It reuses
+`src/events/domain/model.ts` defines the current `EventDocument` storage type. It reuses
 the validated event fields and resolved email settings, replaces timed schedule
 strings with JavaScript `Date` values (serialized by MongoDB as BSON dates), and
 requires an `ObjectId`, owner ID, calendar UID, revision, and timestamps. All-day
 dates remain strings in the fixed Hong Kong timetable. The type describes these
-fields; `src/events/service.ts` converts schedules, resolves defaults, generates
+fields; `src/events/services/events.ts` converts schedules, resolves defaults, generates
 metadata, and inserts the document after business validation. Its input must
 already have passed request-schema validation.
 
@@ -55,7 +55,7 @@ ascending `_id` order with an optional `after` ObjectId cursor and return
 `{ items, nextCursor }`. Queries fetch at most `limit + 1` documents to determine
 whether another page exists. Reuse the range filters on each page. Pagination
 does not create a snapshot, and IDs determine page order rather than event time.
-`src/events/query-schemas.ts` rejects unknown query fields and malformed values;
+`src/events/schemas/query.ts` rejects unknown query fields and malformed values;
 the service validates paired range dates and duration before querying MongoDB.
 
 ## ICS export
@@ -66,7 +66,7 @@ Hong Kong range filters as JSON listing. It returns a complete selection up to
 It rejects pagination and timezone parameters. An empty selection produces a
 valid calendar without VEVENT entries. The shared authenticated read budget applies.
 
-`src/events/ics.ts` queries at most 1001 documents and uses `ical.js` to serialize
+`src/events/http/ics.ts` queries at most 1001 documents and uses `ical.js` to serialize
 RFC 5545 calendar data. UID is stable across downloads and edits; SEQUENCE is
 revision minus one. DTSTAMP and LAST-MODIFIED use updatedAt. Timed DTSTART/DTEND
 are UTC, and all-day values use VALUE=DATE with an exclusive end. Fractional seconds
@@ -178,8 +178,8 @@ Omitting `recurrence` means a single event; null and empty recurrence objects
 are invalid. Interval, count, weekday selectors, timezone fields, monthly/yearly
 frequencies and inline exceptions are not accepted.
 
-`src/events/recurrence-schema.ts` supplies the strict input shape and types.
-`src/events/recurrence.ts` supplies a pure, tested end-date resolver that must run
+`src/events/schemas/recurrence.ts` supplies the strict input shape and types.
+`src/events/recurrence/defaults.ts` supplies a pure, tested end-date resolver that must run
 after schema validation. Schema validation checks structure and calendar-date
 validity; the resolver checks schedule-relative limits without mutating input.
 The resolved end is saved once and preserved on reads and unrelated edits.
@@ -199,7 +199,7 @@ Editing “this and all future occurrences” is outside the initial version.
 
 ## Bounded occurrence generation
 
-`src/events/occurrences.ts` generates timed or all-day schedules from a source
+`src/events/recurrence/occurrences.ts` generates timed or all-day schedules from a source
 schedule, optional **resolved** recurrence, and a required `from`/`to` range.
 It validates all inputs at runtime, including unknown fields and schedule order.
 Date ranges are exclusive at `to`, use Hong Kong midnight and allow 1–93 days.
@@ -303,7 +303,7 @@ Enabled with custom timings:
 A background worker will handle delivery and recheck that the event and reminder
 still exist before sending. Creating an event does not itself send an email.
 
-`src/events/defaults.ts` implements reminder defaults for validated manual
+`src/events/domain/defaults.ts` implements reminder defaults for validated manual
 create requests. `applyCreateEventDefaults` returns a new event object with
 resolved email settings and leaves its input unchanged. The creation service
 calls it after validation and before storage. It does not validate untrusted input, schedule
@@ -337,7 +337,7 @@ revision, timestamps, resolved recurrence and embedded exceptions.
 
 ## Validation and implementation order
 
-`src/events/validation.ts` implements `validateEvent` for a complete,
+`src/events/domain/validation.ts` implements `validateEvent` for a complete,
 schema-validated event. Timed ends must follow starts as actual instants;
 all-day ends must follow starts as Hong Kong calendar dates. Equal endpoints
 are rejected. Past events remain allowed. Failures throw `EventValidationError`,
@@ -352,7 +352,7 @@ validate the complete merged event before saving.
 `withAuth` scope. Its TypeBox validator checks the request without stripping
 unknown properties, coercing types, or injecting defaults. This rejects
 client-supplied ownership, metadata, and `timeZone` fields. On success,
-`src/events/response.ts` maps the stored document to an explicit public response
+`src/events/http/response.ts` maps the stored document to an explicit public response
 with `id` and ISO timestamp strings, excluding `_id` and `ownerId`. UTC (`Z`)
 timestamps represent the same instants in the fixed Hong Kong timetable.
 
@@ -367,13 +367,13 @@ timestamps represent the same instants in the fixed Hong Kong timetable.
 
 ## Updates and deletion
 
-`src/events/mutation-schemas.ts` derives the PATCH body from the create schema,
+`src/events/schemas/mutation.ts` derives the PATCH body from the create schema,
 making only top-level fields optional and rejecting empty patches. Nested
 schedule, recurrence and email objects replace their previous values. Only
 recurrence accepts null, which removes repetition;
 an empty description or location string clears its displayed text.
 
-`src/events/mutations.ts` reads the owned event and merges permitted fields,
+`src/events/services/mutations.ts` reads the owned event and merges permitted fields,
 then checks the complete candidate against the create schema and business rules.
 It preserves omitted reminder settings, resolves explicitly supplied timings,
 and normalizes dates before writing. ID, owner, UID and creation time remain
@@ -393,13 +393,13 @@ An event already absent when PATCH begins returns `404`. Atomic revision
 predicates remain necessary even though same-owner API writes are serialized.
 There is no background job queue for CRUD.
 
-`src/events/conflicts.ts` checks half-open intervals against the same owner's
+`src/events/services/conflicts.ts` checks half-open intervals against the same owner's
 stored events, converting all-day boundaries to Hong Kong instants. PATCH
 excludes its own ID. A bounded cursor fetches potentially relevant normal
 events and recurring parents; effective intervals are compared in start order. It includes existing events regardless of their allowConflicts
 setting; the candidate's flag determines whether the save may proceed.
 
-`src/events/write-lock.ts` serializes create, update and delete for one owner
+`src/events/services/write-lock.ts` serializes create, update and delete for one owner
 within a single API process. Conflict checking and writing occur inside this
 critical section. Releasing in a finally block prevents failed requests from
 blocking later writes; idle owner entries are removed. Different owners and

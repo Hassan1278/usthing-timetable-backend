@@ -1,16 +1,16 @@
 import { expect, test } from "bun:test";
 import { Compile } from "typebox/compile";
-import { PatchEventSchema } from "../../src/events/mutation-schemas.js";
-import { resolveRecurrence } from "../../src/events/recurrence.js";
-import {
-  type RecurrenceInput,
-  RecurrenceSchema,
-} from "../../src/events/recurrence-schema.js";
+import { EventValidationError } from "../../src/events/domain/validation.js";
+import { resolveRecurrence } from "../../src/events/recurrence/defaults.js";
 import {
   type CreateEventInput,
   CreateEventSchema,
-} from "../../src/events/schemas.js";
-import { EventValidationError } from "../../src/events/validation.js";
+} from "../../src/events/schemas/event.js";
+import { PatchEventSchema } from "../../src/events/schemas/mutation.js";
+import {
+  type RecurrenceInput,
+  RecurrenceSchema,
+} from "../../src/events/schemas/recurrence.js";
 
 const eventValidator = Compile(CreateEventSchema);
 const recurrenceValidator = Compile(RecurrenceSchema);

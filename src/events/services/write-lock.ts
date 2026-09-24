@@ -1,5 +1,5 @@
 import type { Collection } from "mongodb";
-import type { EventDocument } from "./model.js";
+import type { EventDocument } from "../domain/model.js";
 
 const pendingWrites = new WeakMap<
   Collection<EventDocument>,

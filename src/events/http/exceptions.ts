@@ -1,19 +1,19 @@
 import type { FastifySchemaCompiler } from "fastify";
 import type { TSchema } from "typebox";
-import type { FastifyTypebox } from "../app.js";
-import type { AuthUser } from "../plugins/auth.js";
-import { HttpError } from "../plugins/sensible.js";
-import { EventConflictError } from "./conflicts.js";
+import type { FastifyTypebox } from "../../app.js";
+import type { AuthUser } from "../../plugins/auth.js";
+import { HttpError } from "../../plugins/sensible.js";
+import { EventValidationError } from "../domain/validation.js";
 import {
   OccurrencePatchSchema,
   OccurrenceQuerySchema,
-} from "./exception-schema.js";
-import { changeOccurrence } from "./exception-service.js";
-import { MutationHeadersSchema } from "./mutation-schemas.js";
-import { EventRevisionError } from "./mutations.js";
-import { EventIdParamsSchema } from "./query-schemas.js";
+} from "../schemas/exception.js";
+import { MutationHeadersSchema } from "../schemas/mutation.js";
+import { EventIdParamsSchema } from "../schemas/query.js";
+import { EventConflictError } from "../services/conflicts.js";
+import { changeOccurrence } from "../services/exceptions.js";
+import { EventRevisionError } from "../services/mutations.js";
 import { EventResponseSchema, toEventResponse } from "./response.js";
-import { EventValidationError } from "./validation.js";
 
 /** Register inside the existing authenticated event scope. */
 export function registerExceptionRoutes(

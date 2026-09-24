@@ -10,10 +10,10 @@ import Fastify from "fastify";
 import fp from "fastify-plugin";
 import ICAL from "ical.js";
 import { ObjectId } from "mongodb";
-import App from "../../src/app.js";
-import { ICS_EXPORT_LIMIT } from "../../src/events/ics.js";
-import type { CreateEventInput } from "../../src/events/schemas.js";
-import { createEvent } from "../../src/events/service.js";
+import App from "../../../src/app.js";
+import { ICS_EXPORT_LIMIT } from "../../../src/events/http/ics.js";
+import type { CreateEventInput } from "../../../src/events/schemas/event.js";
+import { createEvent } from "../../../src/events/services/events.js";
 
 const app = Fastify({ pluginTimeout: 300000 });
 const headers = { authorization: "Bearer alice-dev-token" };

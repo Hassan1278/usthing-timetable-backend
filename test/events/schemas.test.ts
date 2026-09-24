@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Compile } from "typebox/compile";
-import { CreateEventSchema } from "../../src/events/schemas.js";
+import { CreateEventSchema } from "../../src/events/schemas/event.js";
 
 const validator = Compile(CreateEventSchema);
 

@@ -1,10 +1,10 @@
 import { type Static, Type } from "typebox";
 import { Compile } from "typebox/compile";
-import { CALENDAR_RANGE_MAX_DAYS } from "./query-schemas.js";
-import { resolveRecurrence } from "./recurrence.js";
-import { ResolvedRecurrenceSchema } from "./recurrence-schema.js";
-import { ScheduleSchema } from "./schemas.js";
-import { EventValidationError } from "./validation.js";
+import { EventValidationError } from "../domain/validation.js";
+import { ScheduleSchema } from "../schemas/event.js";
+import { CALENDAR_RANGE_MAX_DAYS } from "../schemas/query.js";
+import { ResolvedRecurrenceSchema } from "../schemas/recurrence.js";
+import { resolveRecurrence } from "./defaults.js";
 
 const DAY_MS = 86_400_000;
 const HK_OFFSET_MS = 8 * 60 * 60 * 1000;

@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import type { Collection, Document } from "mongodb";
 import packageJson from "../../package.json" with { type: "json" };
-import type { EventDocument } from "../events/model.js";
+import type { EventDocument } from "../events/domain/model.js";
 
 /**
  * Options for {@link resolveMongoUri} and {@link mongoPlugin}.

@@ -1,13 +1,17 @@
 import { type Collection, ObjectId } from "mongodb";
 import { Compile } from "typebox/compile";
+import { applyCreateEventDefaults } from "../domain/defaults.js";
+import type { EventDocument } from "../domain/model.js";
+import { EventValidationError, validateEvent } from "../domain/validation.js";
+import {
+  eventInput,
+  expandEvent,
+  storedSchedule,
+} from "../recurrence/series.js";
+import { type CreateEventInput, CreateEventSchema } from "../schemas/event.js";
+import type { PatchEventInput } from "../schemas/mutation.js";
 import { assertNoEventConflict } from "./conflicts.js";
-import { applyCreateEventDefaults } from "./defaults.js";
-import type { EventDocument } from "./model.js";
-import type { PatchEventInput } from "./mutation-schemas.js";
-import { type CreateEventInput, CreateEventSchema } from "./schemas.js";
-import { eventInput, expandEvent, storedSchedule } from "./series.js";
-import { getEvent } from "./service.js";
-import { EventValidationError, validateEvent } from "./validation.js";
+import { getEvent } from "./events.js";
 import { withEventWriteLock } from "./write-lock.js";
 
 const candidateValidator = Compile(CreateEventSchema);

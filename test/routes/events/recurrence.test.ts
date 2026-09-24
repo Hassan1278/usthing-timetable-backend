@@ -4,7 +4,7 @@ import Fastify from "fastify";
 import fp from "fastify-plugin";
 import ICAL from "ical.js";
 import { ObjectId } from "mongodb";
-import App from "../../src/app.js";
+import App from "../../../src/app.js";
 
 const app = Fastify({ pluginTimeout: 300000 });
 const headers = { authorization: "Bearer alice-dev-token" };
@@ -636,7 +636,7 @@ test("moving an occurrence onto a standalone event fails without changing the pa
 
 test("cancelled occurrences still count toward the expansion work budget", async () => {
   const { expandEvent, CalendarCapacityError } = await import(
-    "../../src/events/series.js"
+    "../../../src/events/recurrence/series.js"
   );
   const series = await create({
     ...input,

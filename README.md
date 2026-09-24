@@ -332,26 +332,40 @@ Swagger UI is at http://localhost:3000/documentation, Scalar at http://localhost
 
 ## Where things live
 
-```
+```text
 src/
-  app.ts                # Fastify app: options, plugins, routes
-  options.ts            # Environment variable parsing
-  plugins/
-    auth.ts             # Bearer-token auth plugin + withAuth scope
-    init-mongo.ts       # Collections and index bootstrap
-    sensible.ts         # @fastify/sensible error helpers
-  auth/
-    users.ts            # Users and tokens
+  app.ts                # Build and configure Fastify
+  options.ts            # Environment configuration
+  auth/                 # Sample user identities
+  plugins/              # Authentication, MongoDB and HTTP error helpers
+  events/
+    schemas/            # Runtime input contracts and derived types
+    domain/             # Stored event type, defaults and business validation
+    services/           # Database operations, conflict checks and write locking
+    recurrence/         # Recurrence defaults, generation and exception application
+    http/               # Response mapping, occurrence routes and ICS downloads
   routes/
-    example/            # Public example route
-    auth-example/       # Protected example route
+    events/             # Main event endpoint registration
+    health/             # API/database readiness
+    example/            # Remaining template routes
+    auth-example/
 test/
-  routes/               # Route tests
-  auth-schema.test.ts   # withAuth schema-merging contract tests
-  init-mongo.test.ts    # MongoDB URI-defaulting tests
-  mongo.test.ts         # Full-app boot + in-memory MongoDB wiring
-  options.test.ts       # Env parsing tests
+  events/               # Event rules, schemas, storage and recurrence unit tests
+  routes/
+    events/             # Event HTTP integration tests, grouped by behavior
+    ...                 # Template and authentication route tests
+  ...                   # Application, configuration and database tests
 ```
+
+Start in `src/routes/events/index.ts` to follow a request. Request contracts live
+in `events/schemas`; persistence and conflict operations live in `events/services`.
+Recurrence calculations live together in `events/recurrence`. Shared event types,
+defaults and validation live in `events/domain`; HTTP-specific response and
+calendar download handling live in `events/http`.
+
+Only `src/routes` is scanned by Fastify's route autoloader. Files under
+`events/http` are explicitly imported helpers, not independently registered
+routes. This keeps moving a helper from accidentally exposing another endpoint.
 
 ## Tests
 

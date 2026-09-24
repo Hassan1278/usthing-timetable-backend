@@ -1,7 +1,7 @@
 import type { ObjectId } from "mongodb";
+import type { EventException } from "../schemas/exception.js";
+import type { ResolvedRecurrence } from "../schemas/recurrence.js";
 import type { EventWithDefaults } from "./defaults.js";
-import type { EventException } from "./exception-schema.js";
-import type { ResolvedRecurrence } from "./recurrence-schema.js";
 
 /** Fixed Hong Kong timetable; MongoDB serializes Date values as BSON dates. */
 export type StoredSchedule =

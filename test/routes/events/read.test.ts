@@ -4,14 +4,17 @@ import Fastify from "fastify";
 import fp from "fastify-plugin";
 import { ObjectId } from "mongodb";
 import { Compile } from "typebox/compile";
-import App from "../../src/app.js";
-import type { EventDocument, StoredSchedule } from "../../src/events/model.js";
+import App from "../../../src/app.js";
+import type {
+  EventDocument,
+  StoredSchedule,
+} from "../../../src/events/domain/model.js";
 import {
   type EventListResponse,
   EventListResponseSchema,
   EventResponseSchema,
   toEventResponse,
-} from "../../src/events/response.js";
+} from "../../../src/events/http/response.js";
 
 const app = Fastify({ pluginTimeout: 5 * 60 * 1000 });
 const headers = { authorization: "Bearer alice-dev-token" };

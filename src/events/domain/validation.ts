@@ -1,4 +1,4 @@
-import type { CreateEventInput } from "./schemas.js";
+import type { CreateEventInput } from "../schemas/event.js";
 
 /** A business-rule failure that the HTTP layer can map to a 400 response. */
 export class EventValidationError extends Error {

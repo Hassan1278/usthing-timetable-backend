@@ -2,31 +2,38 @@ import type { FastifyPluginAsync, FastifySchemaCompiler } from "fastify";
 import { type TSchema, Type } from "typebox";
 import { Compile } from "typebox/compile";
 import type { FastifyTypebox } from "../../app.js";
-import { EventConflictError } from "../../events/conflicts.js";
-import { registerExceptionRoutes } from "../../events/exception-routes.js";
-import { CalendarExportLimitError, exportCalendar } from "../../events/ics.js";
+import { EventValidationError } from "../../events/domain/validation.js";
+import { registerExceptionRoutes } from "../../events/http/exceptions.js";
 import {
-  MutationHeadersSchema,
-  PatchEventSchema,
-} from "../../events/mutation-schemas.js";
-import {
-  deleteEvent,
-  EventRevisionError,
-  updateEvent,
-} from "../../events/mutations.js";
-import {
-  EventIdParamsSchema,
-  ExportEventsQuerySchema,
-  ListEventsQuerySchema,
-} from "../../events/query-schemas.js";
+  CalendarExportLimitError,
+  exportCalendar,
+} from "../../events/http/ics.js";
 import {
   EventListResponseSchema,
   EventResponseSchema,
   toEventResponse,
-} from "../../events/response.js";
-import { CreateEventSchema } from "../../events/schemas.js";
-import { createEvent, getEvent, listEvents } from "../../events/service.js";
-import { EventValidationError } from "../../events/validation.js";
+} from "../../events/http/response.js";
+import { CreateEventSchema } from "../../events/schemas/event.js";
+import {
+  MutationHeadersSchema,
+  PatchEventSchema,
+} from "../../events/schemas/mutation.js";
+import {
+  EventIdParamsSchema,
+  ExportEventsQuerySchema,
+  ListEventsQuerySchema,
+} from "../../events/schemas/query.js";
+import { EventConflictError } from "../../events/services/conflicts.js";
+import {
+  createEvent,
+  getEvent,
+  listEvents,
+} from "../../events/services/events.js";
+import {
+  deleteEvent,
+  EventRevisionError,
+  updateEvent,
+} from "../../events/services/mutations.js";
 import { HttpError } from "../../plugins/sensible.js";
 
 // Preserve strict schema behavior: no coercion, injected defaults or stripped fields.

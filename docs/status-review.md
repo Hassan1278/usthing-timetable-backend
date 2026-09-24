@@ -36,23 +36,23 @@ validation enforce actual request values. Types do not install database validato
 | [src/plugins/sensible.ts](../src/plugins/sensible.ts) | Registers standard HTTP error helpers and their shared schema. |
 | [src/rate-limits.ts](../src/rate-limits.ts) | Applies IP checks before auth and read/write checks after auth, returning 429 and retry headers when exhausted. |
 | [src/rate-limit-store.ts](../src/rate-limit-store.ts) | Bounded, fixed-window in-memory counters. Independent snapshots prevent simultaneous requests from changing each other's observed counts. |
-| [src/events/calendar-read.ts](../src/events/calendar-read.ts) | Bounded live pagination of normal events and effective recurring occurrences. |
-| [src/events/series.ts](../src/events/series.ts) | Shared schedule conversion, finite expansion, exception application and aggregate budgets. |
-| [src/events/exception-schema.ts](../src/events/exception-schema.ts), [src/events/exception-service.ts](../src/events/exception-service.ts), [src/events/exception-routes.ts](../src/events/exception-routes.ts) | Strict authenticated occurrence edits, cancellations and restoration using parent revisions and atomic embedded exceptions. |
-| [src/events/occurrences.ts](../src/events/occurrences.ts) | Runtime-validated full-series and ranged generation with a 367-occurrence series cap. |
-| [src/events/recurrence-schema.ts](../src/events/recurrence-schema.ts), [src/events/recurrence.ts](../src/events/recurrence.ts) | Optional daily/weekly recurrence contract and HK end-date resolution, persisted once when a rule is saved. |
-| [src/events/ics.ts](../src/events/ics.ts) | Bounded, owned ICS export with UTC instants, date-only all-day events, stable UIDs and safe text serialization via ical.js. |
-| [src/events/schemas.ts](../src/events/schemas.ts) | Runtime create-input contract: fields, lengths, event kinds, timed/all-day schedules, allowConflicts and email settings. Rejects extra fields, including client timezone and ownership. Also derives TypeScript input types. |
-| [src/events/query-schemas.ts](../src/events/query-schemas.ts) | Validates event IDs, date-range query values and cursor pagination parameters. |
-| [src/events/mutation-schemas.ts](../src/events/mutation-schemas.ts) | Derives a nonempty partial PATCH body and validates the supported If-Match header shape. Nested objects remain whole replacements. |
-| [src/events/validation.ts](../src/events/validation.ts) | Rejects equal or reversed intervals after structural validation. Past events are allowed. |
-| [src/events/defaults.ts](../src/events/defaults.ts) | Resolves email settings. Appointments default to reminders 1440 and 120 minutes before; other types default to off. Explicit choices override defaults. |
-| [src/events/model.ts](../src/events/model.ts) | Describes stored documents: ObjectId, owner, details, resolved settings, calendar UID, revision and timestamps. Timed values use Date; all-day values use date strings. Recurrence ends are resolved and exceptions are embedded. |
-| [src/events/service.ts](../src/events/service.ts) | Creates and retrieves owned events. Implements bounded, cursor-paginated listing and optional Hong Kong range filtering. Calls conflict checking inside the owner's write lock before inserting. |
-| [src/events/mutations.ts](../src/events/mutations.ts) | Merges PATCH input with stored state, validates the whole candidate, preserves omitted settings and checks overlaps. Updates/deletes use atomic owner-and-revision predicates. |
-| [src/events/conflicts.ts](../src/events/conflicts.ts) | Checks all effective finite occurrences, including self-overlap, mixed schedules and exceptions. Bounded scans fail closed; the current parent is excluded when editing. |
-| [src/events/write-lock.ts](../src/events/write-lock.ts) | Serializes check-and-write operations per owner in one process. Releases on success or failure and removes idle entries; different owners operate independently. |
-| [src/events/response.ts](../src/events/response.ts) | Defines public response schemas and explicitly maps storage into JSON, omitting internal ownership and renaming _id to id. |
+| [src/events/services/calendar.ts](../src/events/services/calendar.ts) | Bounded live pagination of normal events and effective recurring occurrences. |
+| [src/events/recurrence/series.ts](../src/events/recurrence/series.ts) | Shared schedule conversion, finite expansion, exception application and aggregate budgets. |
+| [src/events/schemas/exception.ts](../src/events/schemas/exception.ts), [src/events/services/exceptions.ts](../src/events/services/exceptions.ts), [src/events/http/exceptions.ts](../src/events/http/exceptions.ts) | Strict authenticated occurrence edits, cancellations and restoration using parent revisions and atomic embedded exceptions. |
+| [src/events/recurrence/occurrences.ts](../src/events/recurrence/occurrences.ts) | Runtime-validated full-series and ranged generation with a 367-occurrence series cap. |
+| [src/events/schemas/recurrence.ts](../src/events/schemas/recurrence.ts), [src/events/recurrence/defaults.ts](../src/events/recurrence/defaults.ts) | Optional daily/weekly recurrence contract and HK end-date resolution, persisted once when a rule is saved. |
+| [src/events/http/ics.ts](../src/events/http/ics.ts) | Bounded, owned ICS export with UTC instants, date-only all-day events, stable UIDs and safe text serialization via ical.js. |
+| [src/events/schemas/event.ts](../src/events/schemas/event.ts) | Runtime create-input contract: fields, lengths, event kinds, timed/all-day schedules, allowConflicts and email settings. Rejects extra fields, including client timezone and ownership. Also derives TypeScript input types. |
+| [src/events/schemas/query.ts](../src/events/schemas/query.ts) | Validates event IDs, date-range query values and cursor pagination parameters. |
+| [src/events/schemas/mutation.ts](../src/events/schemas/mutation.ts) | Derives a nonempty partial PATCH body and validates the supported If-Match header shape. Nested objects remain whole replacements. |
+| [src/events/domain/validation.ts](../src/events/domain/validation.ts) | Rejects equal or reversed intervals after structural validation. Past events are allowed. |
+| [src/events/domain/defaults.ts](../src/events/domain/defaults.ts) | Resolves email settings. Appointments default to reminders 1440 and 120 minutes before; other types default to off. Explicit choices override defaults. |
+| [src/events/domain/model.ts](../src/events/domain/model.ts) | Describes stored documents: ObjectId, owner, details, resolved settings, calendar UID, revision and timestamps. Timed values use Date; all-day values use date strings. Recurrence ends are resolved and exceptions are embedded. |
+| [src/events/services/events.ts](../src/events/services/events.ts) | Creates and retrieves owned events. Implements bounded, cursor-paginated listing and optional Hong Kong range filtering. Calls conflict checking inside the owner's write lock before inserting. |
+| [src/events/services/mutations.ts](../src/events/services/mutations.ts) | Merges PATCH input with stored state, validates the whole candidate, preserves omitted settings and checks overlaps. Updates/deletes use atomic owner-and-revision predicates. |
+| [src/events/services/conflicts.ts](../src/events/services/conflicts.ts) | Checks all effective finite occurrences, including self-overlap, mixed schedules and exceptions. Bounded scans fail closed; the current parent is excluded when editing. |
+| [src/events/services/write-lock.ts](../src/events/services/write-lock.ts) | Serializes check-and-write operations per owner in one process. Releases on success or failure and removes idle entries; different owners operate independently. |
+| [src/events/http/response.ts](../src/events/http/response.ts) | Defines public response schemas and explicitly maps storage into JSON, omitting internal ownership and renaming _id to id. |
 | [src/routes/health/index.ts](../src/routes/health/index.ts) | Returns readiness based on a bounded MongoDB ping, with generic failure responses. |
 | [src/routes/events/index.ts](../src/routes/events/index.ts) | Connects HTTP methods to auth, strict validation, services and documented status codes. Routes carry transport concerns; services carry event behavior. |
 | [src/routes/auth-example/index.ts](../src/routes/auth-example/index.ts) | Inherited protected demonstration route. Useful while learning; remove or justify in final submission cleanup. |
@@ -67,19 +67,19 @@ interfere with each other. Dedicated rate tests use small budgets.
 
 | Test file | Behavior verified |
 | --- | --- |
-| [test/routes/events-recurrence.test.ts](../test/routes/events-recurrence.test.ts) | End-to-end recurrence, full-series conflicts, exceptions, pagination, concurrency, security limits and ICS equivalence. |
+| [test/routes/events/recurrence.test.ts](../test/routes/events/recurrence.test.ts) | End-to-end recurrence, full-series conflicts, exceptions, pagination, concurrency, security limits and ICS equivalence. |
 | [test/events/occurrences.test.ts](../test/events/occurrences.test.ts) | Range boundaries, invalid inputs, bounded work, stable original starts and 600 comparisons against exhaustive expansion. |
 | [test/events/recurrence.test.ts](../test/events/recurrence.test.ts) | Optional rules on either schedule, strict values, inclusive date bounds, 12-month defaults, leap days and HK date conversion. |
-| [test/routes/events-export.test.ts](../test/routes/events-export.test.ts) | Download format, ownership, text escaping, HK boundaries, revision metadata, output limits and shared read limits. |
+| [test/routes/events/export.test.ts](../test/routes/events/export.test.ts) | Download format, ownership, text escaping, HK boundaries, revision metadata, output limits and shared read limits. |
 | [test/events/schemas.test.ts](../test/events/schemas.test.ts) | Valid inputs, bad dates, bounds, protected fields, email rules and rejection of the old isOptional field. |
 | [test/events/defaults.test.ts](../test/events/defaults.test.ts) | Default reminders, explicit overrides and input/array independence. |
 | [test/events/validation.test.ts](../test/events/validation.test.ts) | Interval ordering, equivalent offsets, all-day boundaries and unchanged input. |
 | [test/events/storage.test.ts](../test/events/storage.test.ts) | MongoDB date round-trips and UID uniqueness per owner. |
-| [test/routes/events.test.ts](../test/routes/events.test.ts) | POST authentication, strict validation, server-derived ownership, defaults and public responses. |
-| [test/routes/events-get.test.ts](../test/routes/events-get.test.ts) | Read isolation, pagination, all-date listing, HK range boundaries and invalid queries. |
-| [test/routes/events-mutations.test.ts](../test/routes/events-mutations.test.ts) | Partial edits, settings replacement, revision handling, deletion, protected fields and competing writes. |
-| [test/routes/events-conflicts.test.ts](../test/routes/events-conflicts.test.ts) | Backend overlap rejection, mixed schedules, touching endpoints, owner isolation, explicit overrides and concurrent checks/saves. |
-| [test/routes/events-rate-limits.test.ts](../test/routes/events-rate-limits.test.ts) | Shared POST/PATCH/DELETE budget and proof that rejected requests do not mutate MongoDB. |
+| [test/routes/events/create.test.ts](../test/routes/events/create.test.ts) | POST authentication, strict validation, server-derived ownership, defaults and public responses. |
+| [test/routes/events/read.test.ts](../test/routes/events/read.test.ts) | Read isolation, pagination, all-date listing, HK range boundaries and invalid queries. |
+| [test/routes/events/mutations.test.ts](../test/routes/events/mutations.test.ts) | Partial edits, settings replacement, revision handling, deletion, protected fields and competing writes. |
+| [test/routes/events/conflicts.test.ts](../test/routes/events/conflicts.test.ts) | Backend overlap rejection, mixed schedules, touching endpoints, owner isolation, explicit overrides and concurrent checks/saves. |
+| [test/routes/events/rate-limits.test.ts](../test/routes/events/rate-limits.test.ts) | Shared POST/PATCH/DELETE budget and proof that rejected requests do not mutate MongoDB. |
 | [test/rate-limits.test.ts](../test/rate-limits.test.ts) | IP/user separation, endpoint sharing, forwarded-IP spoofing, IPv6 subnet grouping, bursts and expiry. |
 | [test/options.test.ts](../test/options.test.ts) | Configuration parsing and rejected invalid rate settings. |
 | [test/mongo.test.ts](../test/mongo.test.ts) | MongoDB startup, readiness success/failure and example-collection operations. |

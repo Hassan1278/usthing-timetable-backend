@@ -2,7 +2,7 @@ import { onTestFinished, test } from "bun:test";
 import * as assert from "node:assert";
 import Fastify from "fastify";
 import fp from "fastify-plugin";
-import App from "../../src/app.js";
+import App from "../../../src/app.js";
 
 async function build() {
   const app = Fastify({ pluginTimeout: 300000 });

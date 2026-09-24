@@ -1,6 +1,9 @@
-import { resolveRecurrence } from "./recurrence.js";
-import type { ResolvedRecurrence } from "./recurrence-schema.js";
-import type { CreateEventInput, EmailNotificationsInput } from "./schemas.js";
+import { resolveRecurrence } from "../recurrence/defaults.js";
+import type {
+  CreateEventInput,
+  EmailNotificationsInput,
+} from "../schemas/event.js";
+import type { ResolvedRecurrence } from "../schemas/recurrence.js";
 
 export type ResolvedEmailNotifications =
   | { enabled: false }

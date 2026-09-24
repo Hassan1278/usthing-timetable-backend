@@ -1,12 +1,12 @@
 import type { Collection } from "mongodb";
 import { Compile } from "typebox/compile";
+import type { EventDocument } from "../domain/model.js";
+import { EventValidationError } from "../domain/validation.js";
+import { baseOccurrences, expandEvent } from "../recurrence/series.js";
+import { OccurrencePatchSchema } from "../schemas/exception.js";
 import { assertNoEventConflict } from "./conflicts.js";
-import { OccurrencePatchSchema } from "./exception-schema.js";
-import type { EventDocument } from "./model.js";
+import { getEvent } from "./events.js";
 import { EventRevisionError } from "./mutations.js";
-import { baseOccurrences, expandEvent } from "./series.js";
-import { getEvent } from "./service.js";
-import { EventValidationError } from "./validation.js";
 import { withEventWriteLock } from "./write-lock.js";
 
 const patchValidator = Compile(OccurrencePatchSchema);

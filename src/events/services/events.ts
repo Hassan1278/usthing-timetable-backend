@@ -1,17 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { type Collection, type Filter, ObjectId } from "mongodb";
-import { listCalendarOccurrences } from "./calendar-read.js";
-import { assertNoEventConflict } from "./conflicts.js";
-import { applyCreateEventDefaults } from "./defaults.js";
-import type { EventDocument } from "./model.js";
+import { applyCreateEventDefaults } from "../domain/defaults.js";
+import type { EventDocument } from "../domain/model.js";
+import { EventValidationError, validateEvent } from "../domain/validation.js";
+import type { ExpandedEvent } from "../recurrence/series.js";
+import { expandEvent } from "../recurrence/series.js";
+import type { CreateEventInput } from "../schemas/event.js";
 import {
   CALENDAR_RANGE_MAX_DAYS,
   type ListEventsQuery,
-} from "./query-schemas.js";
-import type { CreateEventInput } from "./schemas.js";
-import type { ExpandedEvent } from "./series.js";
-import { expandEvent } from "./series.js";
-import { EventValidationError, validateEvent } from "./validation.js";
+} from "../schemas/query.js";
+import { listCalendarOccurrences } from "./calendar.js";
+import { assertNoEventConflict } from "./conflicts.js";
 import { withEventWriteLock } from "./write-lock.js";
 
 /** Input must pass CreateEventSchema; ownerId must come from authentication. */

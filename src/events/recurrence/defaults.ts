@@ -1,9 +1,9 @@
+import { EventValidationError } from "../domain/validation.js";
+import type { CreateEventInput } from "../schemas/event.js";
 import type {
   RecurrenceInput,
   ResolvedRecurrence,
-} from "./recurrence-schema.js";
-import type { CreateEventInput } from "./schemas.js";
-import { EventValidationError } from "./validation.js";
+} from "../schemas/recurrence.js";
 
 /**
  * Call after structural validation. Resolve once when a series is created,

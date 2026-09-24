@@ -1,5 +1,5 @@
 import { type Static, Type } from "typebox";
-import { RecurrenceSchema } from "./recurrence-schema.js";
+import { RecurrenceSchema } from "./recurrence.js";
 
 /** Validates input; the event service resolves omitted timings when enabled. */
 export const EmailNotificationsSchema = Type.Union([

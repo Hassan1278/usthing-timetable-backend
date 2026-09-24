@@ -1,15 +1,15 @@
 import ICAL from "ical.js";
 import type { Collection } from "mongodb";
-import type { EventDocument } from "./model.js";
-import type { ListEventsQuery } from "./query-schemas.js";
+import type { EventDocument } from "../domain/model.js";
 import {
   baseOccurrences,
   CalendarCapacityError,
   expandEvent,
   MAX_EXPANDED_OCCURRENCES,
   overlapsRange,
-} from "./series.js";
-import { buildEventFilter } from "./service.js";
+} from "../recurrence/series.js";
+import type { ListEventsQuery } from "../schemas/query.js";
+import { buildEventFilter } from "../services/events.js";
 
 export const ICS_EXPORT_LIMIT = 1000;
 

@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
+import { EventValidationError } from "../../src/events/domain/validation.js";
 import {
   generateOccurrences,
   MAX_OCCURRENCES_PER_SERIES,
   type OccurrenceRange,
   type OccurrenceSource,
-} from "../../src/events/occurrences.js";
-import { EventValidationError } from "../../src/events/validation.js";
+} from "../../src/events/recurrence/occurrences.js";
 
 const day = 86_400_000;
 const offset = 8 * 60 * 60 * 1000;

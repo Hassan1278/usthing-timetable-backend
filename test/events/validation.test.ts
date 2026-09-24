@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import { Compile } from "typebox/compile";
 import {
-  type CreateEventInput,
-  CreateEventSchema,
-} from "../../src/events/schemas.js";
-import {
   EventValidationError,
   validateEvent,
-} from "../../src/events/validation.js";
+} from "../../src/events/domain/validation.js";
+import {
+  type CreateEventInput,
+  CreateEventSchema,
+} from "../../src/events/schemas/event.js";
 
 const validator = Compile(CreateEventSchema);
 

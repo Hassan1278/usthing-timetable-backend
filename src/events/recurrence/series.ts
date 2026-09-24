@@ -1,9 +1,9 @@
 import { Compile } from "typebox/compile";
-import { resolveEmailNotifications } from "./defaults.js";
-import type { EventDocument, StoredSchedule } from "./model.js";
+import { resolveEmailNotifications } from "../domain/defaults.js";
+import type { EventDocument, StoredSchedule } from "../domain/model.js";
+import { EventValidationError, validateEvent } from "../domain/validation.js";
+import { type CreateEventInput, CreateEventSchema } from "../schemas/event.js";
 import { generateAllOccurrences } from "./occurrences.js";
-import { type CreateEventInput, CreateEventSchema } from "./schemas.js";
-import { EventValidationError, validateEvent } from "./validation.js";
 
 const inputValidator = Compile(CreateEventSchema);
 export class CalendarCapacityError extends Error {

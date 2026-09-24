@@ -1,6 +1,6 @@
 import { type Collection, ObjectId } from "mongodb";
-import type { EventDocument } from "./model.js";
-import type { ListEventsQuery } from "./query-schemas.js";
+import type { EventDocument } from "../domain/model.js";
+import { EventValidationError } from "../domain/validation.js";
 import {
   CalendarCapacityError,
   type ExpandedEvent,
@@ -8,9 +8,9 @@ import {
   MAX_EXPANDED_OCCURRENCES,
   MAX_SCANNED_EVENTS,
   overlapsRange,
-} from "./series.js";
-import { buildEventFilter } from "./service.js";
-import { EventValidationError } from "./validation.js";
+} from "../recurrence/series.js";
+import type { ListEventsQuery } from "../schemas/query.js";
+import { buildEventFilter } from "./events.js";
 
 /** Live cursor ordered by parent ID and original start, not moved schedule time. */
 export async function listCalendarOccurrences(

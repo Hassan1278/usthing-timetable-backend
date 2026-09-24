@@ -3,8 +3,8 @@ import * as assert from "node:assert";
 import Fastify from "fastify";
 import fp from "fastify-plugin";
 import { ObjectId } from "mongodb";
-import App from "../../src/app.js";
-import type { CreateEventInput } from "../../src/events/schemas.js";
+import App from "../../../src/app.js";
+import type { CreateEventInput } from "../../../src/events/schemas/event.js";
 
 const app = Fastify({ pluginTimeout: 300000 });
 const headers = { authorization: "Bearer alice-dev-token" };

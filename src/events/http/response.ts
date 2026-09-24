@@ -1,8 +1,11 @@
 import { type Static, Type } from "typebox";
-import { ExceptionSchema } from "./exception-schema.js";
-import { ResolvedRecurrenceSchema } from "./recurrence-schema.js";
-import { CreateEventSchema, EmailNotificationsSchema } from "./schemas.js";
-import type { ExpandedEvent } from "./series.js";
+import type { ExpandedEvent } from "../recurrence/series.js";
+import {
+  CreateEventSchema,
+  EmailNotificationsSchema,
+} from "../schemas/event.js";
+import { ExceptionSchema } from "../schemas/exception.js";
+import { ResolvedRecurrenceSchema } from "../schemas/recurrence.js";
 
 export const EventResponseSchema = Type.Object(
   {

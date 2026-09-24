@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { applyCreateEventDefaults } from "../../src/events/defaults.js";
-import type { CreateEventInput } from "../../src/events/schemas.js";
+import { applyCreateEventDefaults } from "../../src/events/domain/defaults.js";
+import type { CreateEventInput } from "../../src/events/schemas/event.js";
 
 const appointment: CreateEventInput = {
   title: "Doctor appointment",
