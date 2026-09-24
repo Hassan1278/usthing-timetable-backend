@@ -17,7 +17,7 @@ export type EventDocument = Omit<EventWithDefaults, "schedule"> & {
   schedule: StoredSchedule;
   /** Stable calendar identity for future ICS import/export. */
   uid: string;
-  /** Starts at 1; future updates must check and increment it atomically. */
+  /** Starts at 1; updates check and increment it atomically. */
   revision: number;
   createdAt: Date;
   updatedAt: Date;

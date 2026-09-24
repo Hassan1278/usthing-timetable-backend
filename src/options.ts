@@ -2,6 +2,7 @@ import type { AutoloadPluginOptions } from "@fastify/autoload";
 import type { FastifyServerOptions } from "fastify";
 import type { AuthPluginOptions } from "./plugins/auth.js";
 import type { InitMongoPluginOptions } from "./plugins/init-mongo.js";
+import type { RateLimitOptions } from "./rate-limits.js";
 
 export type Env = Record<string, string | undefined>;
 
@@ -121,7 +122,18 @@ export type AppOptions = {
 } & FastifyServerOptions &
   Partial<AutoloadPluginOptions> &
   InitMongoPluginOptions &
-  AuthPluginOptions;
+  AuthPluginOptions &
+  RateLimitOptions;
+
+function positiveIntegerOption(env: Env, name: string): number | undefined {
+  const value = env[name]?.trim();
+  if (!value) return undefined;
+  const number = Number(value);
+  if (!/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(number)) {
+    throw new Error(`${name} must be a positive safe integer.`);
+  }
+  return number;
+}
 
 export function loadOptions(env: Env = Bun.env): AppOptions {
   const options: AppOptions = {
@@ -138,6 +150,10 @@ export function loadOptions(env: Env = Bun.env): AppOptions {
     mongoUri: getOption(env, "MONGO_URI", false)?.trim() || undefined,
     mongoTestUri: getOption(env, "MONGO_TEST_URI", false)?.trim() || undefined,
     authSkip: getBooleanOption(env, "AUTH_SKIP", false),
+    rateLimitIpMax: positiveIntegerOption(env, "RATE_LIMIT_IP_MAX"),
+    rateLimitReadMax: positiveIntegerOption(env, "RATE_LIMIT_READ_MAX"),
+    rateLimitWriteMax: positiveIntegerOption(env, "RATE_LIMIT_WRITE_MAX"),
+    rateLimitWindowMs: positiveIntegerOption(env, "RATE_LIMIT_WINDOW_MS"),
   };
 
   return options;

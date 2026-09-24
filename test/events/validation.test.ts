@@ -15,7 +15,7 @@ function event(schedule: CreateEventInput["schedule"]): CreateEventInput {
   return {
     title: "Study session",
     eventType: "study",
-    isOptional: false,
+    allowConflicts: false,
     schedule,
   };
 }

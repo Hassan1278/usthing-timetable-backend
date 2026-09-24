@@ -17,6 +17,9 @@ beforeAll(async () => {
     mongoTestUri: undefined,
     test: true,
     authSkip: false,
+    rateLimitIpMax: 10000,
+    rateLimitReadMax: 10000,
+    rateLimitWriteMax: 10000,
   });
   await app.ready();
 });
@@ -32,7 +35,7 @@ beforeEach(async () => {
       description: "Bring notes",
       location: "Clinic",
       eventType: "appointment",
-      isOptional: false,
+      allowConflicts: false,
       schedule: {
         kind: "timed",
         startsAt: "2026-10-05T10:00:00+08:00",
@@ -56,14 +59,14 @@ test("PATCH changes supplied fields, preserves metadata and returns the next ETa
     method: "PATCH",
     url: `/events/${event.id}`,
     headers,
-    payload: { title: "Updated", isOptional: true, location: "" },
+    payload: { title: "Updated", allowConflicts: true, location: "" },
   });
   assert.equal(response.statusCode, 200, response.payload);
   const body = response.json<EventResponse>();
   assert.deepStrictEqual(body, {
     ...event,
     title: "Updated",
-    isOptional: true,
+    allowConflicts: true,
     location: "",
     revision: 2,
     updatedAt: body.updatedAt,
@@ -136,7 +139,7 @@ test("replacing a timed schedule with all-day removes the old timed fields", asy
 test.each([
   {},
   { title: " " },
-  { isOptional: "true" },
+  { allowConflicts: "true" },
   { description: null },
   { schedule: { endsAt: "2026-10-05T12:00:00+08:00" } },
   {
@@ -184,6 +187,7 @@ test.each([
   "updatedAt",
   "exceptions",
   "timeZone",
+  "isOptional",
   "recurrence",
 ])("PATCH rejects protected or unsupported field %s", async (field) => {
   const before = await stored();

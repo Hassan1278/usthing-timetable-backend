@@ -7,7 +7,7 @@ const validator = Compile(CreateEventSchema);
 const validEvent = {
   title: "Doctor appointment",
   eventType: "appointment",
-  isOptional: false,
+  allowConflicts: false,
   schedule: {
     kind: "timed",
     startsAt: "2026-10-05T10:00:00+08:00",
@@ -53,7 +53,7 @@ describe("event input", () => {
     },
   );
 
-  test.each(["title", "eventType", "isOptional", "schedule"])(
+  test.each(["title", "eventType", "allowConflicts", "schedule"])(
     "rejects a missing %s",
     (field) => {
       const input = Object.fromEntries(
@@ -85,7 +85,8 @@ describe("event input", () => {
     { description: "x".repeat(2001) },
     { location: "x".repeat(201) },
     { eventType: "unknown" },
-    { isOptional: "false" },
+    { allowConflicts: "false" },
+    { isOptional: true },
   ])("rejects invalid event details %#", (changes) => {
     expect(validator.Check({ ...validEvent, ...changes })).toBe(false);
   });

@@ -27,7 +27,7 @@ function storedEvent(ownerId: string, uid: string): EventDocument {
     uid,
     title: "Study session",
     eventType: "study",
-    isOptional: false,
+    allowConflicts: false,
     schedule: {
       kind: "timed",
       startsAt: new Date("2026-10-05T10:00:00+08:00"),

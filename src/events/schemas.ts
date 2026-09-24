@@ -66,7 +66,10 @@ export const CreateEventSchema = Type.Object(
     location: Type.Optional(Type.String({ maxLength: 200 })),
 
     eventType: EventTypeSchema,
-    isOptional: Type.Boolean(),
+    allowConflicts: Type.Boolean({
+      description:
+        "Allow this event to overlap other events. False rejects overlapping creates or updates.",
+    }),
     schedule: ScheduleSchema,
     emailNotifications: Type.Optional(EmailNotificationsSchema),
   },

@@ -26,6 +26,9 @@ beforeAll(async () => {
     mongoTestUri: undefined,
     test: true,
     authSkip: false,
+    rateLimitIpMax: 10000,
+    rateLimitReadMax: 10000,
+    rateLimitWriteMax: 10000,
   });
   await app.ready();
   aliceId = (await app.authenticate("alice-dev-token")).id;
@@ -52,7 +55,7 @@ function document(
     uid: id.toHexString(),
     title: "Study",
     eventType: "study",
-    isOptional: false,
+    allowConflicts: false,
     schedule,
     emailNotifications: { enabled: false },
     revision: 1,

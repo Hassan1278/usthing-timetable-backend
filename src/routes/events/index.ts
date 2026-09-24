@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifySchemaCompiler } from "fastify";
 import type { TSchema } from "typebox";
 import { Compile } from "typebox/compile";
 import type { FastifyTypebox } from "../../app.js";
+import { EventConflictError } from "../../events/conflicts.js";
 import {
   MutationHeadersSchema,
   PatchEventSchema,
@@ -36,6 +37,15 @@ const strictValidatorCompiler: FastifySchemaCompiler<TSchema> = ({
 
 const events: FastifyPluginAsync = async (fastify: FastifyTypebox) => {
   fastify.withAuth(async (scope) => {
+    scope.addHook("onRoute", (route) => {
+      route.schema = {
+        ...route.schema,
+        response: {
+          ...(route.schema?.response as Record<string, unknown>),
+          429: HttpError,
+        },
+      };
+    });
     scope.get(
       "/",
       {
@@ -110,7 +120,11 @@ const events: FastifyPluginAsync = async (fastify: FastifyTypebox) => {
           tags: ["Events"],
           security: [{ Auth: [] }],
           body: CreateEventSchema,
-          response: { 201: EventResponseSchema, 400: HttpError },
+          response: {
+            201: EventResponseSchema,
+            400: HttpError,
+            409: HttpError,
+          },
         },
       },
       async (request, reply) => {
@@ -125,6 +139,8 @@ const events: FastifyPluginAsync = async (fastify: FastifyTypebox) => {
             .header("ETag", `"${event.revision}"`)
             .send(toEventResponse(event));
         } catch (error) {
+          if (error instanceof EventConflictError)
+            return reply.conflict(error.message);
           if (error instanceof EventValidationError) {
             return reply.badRequest(error.message);
           }
@@ -150,6 +166,7 @@ const events: FastifyPluginAsync = async (fastify: FastifyTypebox) => {
             200: EventResponseSchema,
             400: HttpError,
             404: HttpError,
+            409: HttpError,
             412: HttpError,
             428: HttpError,
           },
@@ -180,6 +197,8 @@ const events: FastifyPluginAsync = async (fastify: FastifyTypebox) => {
             .header("ETag", `"${event.revision}"`)
             .send(toEventResponse(event));
         } catch (error) {
+          if (error instanceof EventConflictError)
+            return reply.conflict(error.message);
           if (error instanceof EventValidationError)
             return reply.badRequest(error.message);
           if (error instanceof EventRevisionError)

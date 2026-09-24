@@ -2,6 +2,29 @@ import { describe, expect, test } from "bun:test";
 import { loadOptions } from "../src/options.js";
 
 describe("loadOptions", () => {
+  test("loads configurable rate limits", () => {
+    const options = loadOptions({
+      RATE_LIMIT_IP_MAX: "200",
+      RATE_LIMIT_READ_MAX: "100",
+      RATE_LIMIT_WRITE_MAX: "20",
+      RATE_LIMIT_WINDOW_MS: "30000",
+    });
+    expect(options.rateLimitIpMax).toBe(200);
+    expect(options.rateLimitReadMax).toBe(100);
+    expect(options.rateLimitWriteMax).toBe(20);
+    expect(options.rateLimitWindowMs).toBe(30000);
+  });
+
+  test.each([
+    "RATE_LIMIT_IP_MAX",
+    "RATE_LIMIT_READ_MAX",
+    "RATE_LIMIT_WRITE_MAX",
+    "RATE_LIMIT_WINDOW_MS",
+  ])("rejects invalid %s", (name) => {
+    for (const value of ["0", "-1", "1.5", "1e3", "abc", "9007199254740992"]) {
+      expect(() => loadOptions({ [name]: value })).toThrow(name);
+    }
+  });
   test("loads options from an explicit env object", () => {
     const options = loadOptions({
       MONGO_URI: "mongodb://localhost:27017/template-api-test",

@@ -5,7 +5,7 @@ import type { CreateEventInput } from "../../src/events/schemas.js";
 const appointment: CreateEventInput = {
   title: "Doctor appointment",
   eventType: "appointment",
-  isOptional: false,
+  allowConflicts: false,
   schedule: {
     kind: "timed",
     startsAt: "2026-10-05T10:00:00+08:00",
@@ -87,12 +87,12 @@ test("default arrays are independent between events", () => {
   expect(appointment).not.toHaveProperty("emailNotifications");
 });
 
-test("all-day and optional events retain their details and reminder defaults", () => {
+test("all-day events allowing conflicts retain their details and reminder defaults", () => {
   const input: CreateEventInput = {
     ...appointment,
     description: "Annual checkup",
     location: "Campus clinic",
-    isOptional: true,
+    allowConflicts: true,
     schedule: {
       kind: "all-day",
       startsOn: "2026-10-05",

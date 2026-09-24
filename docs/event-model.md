@@ -69,7 +69,7 @@ the service validates paired range dates and duration before querying MongoDB.
 | `description` | Optional plain-text details | User |
 | `location` | Optional location | User |
 | `eventType` | `class`, `appointment`, `club`, `study`, `personal`, or `other` | User |
-| `isOptional` | Whether the user considers attendance optional | User |
+| `allowConflicts` | Explicit permission to save despite overlaps | User |
 | `schedule` | Timed or all-day schedule | User |
 | `recurrence` | Optional rule describing repeated occurrences | User |
 | `exceptions` | Cancelled or modified occurrences of a series | Dedicated authenticated operations |
@@ -152,10 +152,15 @@ Changing a series schedule or recurrence while exceptions exist requires the
 user to explicitly clear those exceptions. Metadata-only edits preserve them.
 Editing “this and all future occurrences” is outside the initial version.
 
-## Optional attendance and conflicts
+## Allowing conflicts
 
-`isOptional` is a required boolean describing attendance. It is not permission
-to ignore the event during conflict detection and does not control email.
+`allowConflicts` is a required boolean expressing whether the event may overlap
+other events. It does not describe attendance and does not control email.
+The backend checks every create and update. False rejects an overlap with
+`409 Conflict` before saving; true permits the operation. The error describes
+the conflict without returning a list of event details. This applies to the
+event being saved. Existing events remain part of overlap detection regardless
+of their own setting.
 
 Occurrences overlap when:
 
@@ -163,13 +168,12 @@ Occurrences overlap when:
 existingStart < proposedEnd AND existingEnd > proposedStart
 ```
 
-An event ending exactly when another starts does not conflict. Conflict results
-include whether the affected events are optional, so a client can explain the
-choice. Conflicts are warnings and do not block saving.
+An event ending exactly when another starts does not conflict. The current API
+returns a conflict message; a detailed conflict-list response is future work.
 
-Conflict checks consider the current user's effective occurrences, including
-exclusions and moved instances. Results must state the interval checked and
-must not imply that an open-ended series was checked forever.
+Current checks cover the user's stored non-recurring timed and all-day events.
+Recurring occurrences, exclusions and moved instances must be incorporated when
+recurrence is implemented; the current model does not support them.
 
 ## Email notifications
 
@@ -231,7 +235,7 @@ for explicitly supplied notification settings. Import remains future work.
   "description": "Bring appointment confirmation",
   "location": "Campus clinic",
   "eventType": "appointment",
-  "isOptional": false,
+  "allowConflicts": false,
   "schedule": {
     "kind": "timed",
     "startsAt": "2026-10-05T10:00:00+08:00",
@@ -300,11 +304,60 @@ MongoDB applies ownership and revision predicates in the same atomic operation
 as the update or deletion. The initial PATCH read alone is not a concurrency
 guarantee: `findOneAndUpdate` must still match the revision when writing. DELETE
 uses `deleteOne` with the same conditions and returns an empty `204` on success.
-A concurrent deletion during PATCH can cause `412` after the initial read;
-an event already absent when PATCH begins returns `404`. No transaction or
-background queue is needed for these single-document writes.
+An event already absent when PATCH begins returns `404`. Atomic revision
+predicates remain necessary even though same-owner API writes are serialized.
+There is no background job queue for CRUD.
+
+`src/events/conflicts.ts` checks half-open intervals against the same owner's
+stored events, converting all-day boundaries to Hong Kong instants. PATCH
+excludes its own ID. The database query projects only an ID and stops at the
+first overlap. It includes existing events regardless of their allowConflicts
+setting; the candidate's flag determines whether the save may proceed.
+
+`src/events/write-lock.ts` serializes create, update and delete for one owner
+within a single API process. Conflict checking and writing occur inside this
+critical section. Releasing in a finally block prevents failed requests from
+blocking later writes; idle owner entries are removed. Different owners and
+reads do not share a lock. This is not a distributed lock. Before multiple API
+replicas or additional write paths are enabled, replace it with database-level
+coordination (for example a transaction with a per-owner coordination document
+on a replica set) and add cross-instance race tests. A transaction containing
+only an overlap read and an independent event insert is not sufficient to
+serialize competing calendar writes.
 
 Base CRUD, input validation, defaults, storage types, indexes and tests are
-implemented. Remaining milestones include recurrence, conflicts, ICS
-import/export, reminder delivery and API containerization. Each milestone
-includes tests and documentation updates.
+implemented. Basic backend conflict rejection is also implemented. Remaining
+milestones include recurrence, ICS import/export, reminder delivery and API
+containerization. Each milestone includes tests and documentation updates.
+
+## Request rate limits
+
+`src/rate-limits.ts` registers `@fastify/rate-limit` before application routes.
+An onRequest hook applies a shared IP budget before authentication. A preParsing
+hook then applies authenticated user budgets before parsing and validation:
+GET/HEAD share the read budget; other authenticated methods share the write
+budget. Keys use the verified user ID, never a client-supplied ID or raw token.
+POST, PATCH and DELETE therefore consume the same write allowance. Invalid
+requests consume any budgets they reach. CORS preflight handled by the earlier
+CORS hook does not consume allowance.
+
+Defaults per 60-second fixed window are 120 requests per IP, 120 reads per user,
+and 30 writes per user. Both IP and user checks must pass. All users sharing an
+IP share its budget; limits should be tuned for campus networks and actual load.
+Requests exceeding a budget return 429 with Retry-After in seconds. Response
+headers X-RateLimit-Scope, X-RateLimit-Limit, X-RateLimit-Remaining and
+X-RateLimit-Reset describe the last checked budget; reset is seconds remaining,
+not a Unix timestamp. Counter errors fail closed.
+
+The plugin's supported custom-store interface uses `src/rate-limit-store.ts`
+to return independent counter snapshots, avoiding mutable counter races in
+simultaneous requests. Each in-memory store retains up to 5000 keys using LRU
+replacement. Restarting the process or evicting a key resets that allowance.
+These are per-process traffic controls, not a distributed abuse-prevention
+system. Multiple API replicas require a shared store such as Redis. Deployment
+behind a proxy must explicitly trust only the known proxy addresses; the current
+server does not trust arbitrary forwarded IP headers. IPv6 IP limits group /64
+subnets using the rate-limit plugin's normalization.
+
+Atomic ownership/revision predicates still protect competing writes. Rate
+limiting does not replace the write lock or the atomic revision checks.

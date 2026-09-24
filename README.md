@@ -32,7 +32,7 @@ curl -i http://localhost:3000/events \
   -d '{
     "title": "Doctor appointment",
     "eventType": "appointment",
-    "isOptional": false,
+    "allowConflicts": false,
     "schedule": {
       "kind": "timed",
       "startsAt": "2026-10-05T10:00:00+08:00",
@@ -103,7 +103,7 @@ curl -i -X PATCH 'http://localhost:3000/events/EVENT_ID' \
   -H 'Authorization: Bearer alice-dev-token' \
   -H 'If-Match: "1"' \
   -H 'Content-Type: application/json' \
-  -d '{"title":"Updated appointment","isOptional":true}'
+  -d '{"title":"Updated appointment","allowConflicts":true}'
 ```
 
 PATCH returns `200` with the updated event and next ETag. Only supplied fields
@@ -129,6 +129,7 @@ DELETE returns `204` with no body. Deletion is permanent. Both mutations return:
 | `400` | Invalid input, ID or revision header; business validation failed |
 | `401` | Missing or unknown bearer token |
 | `404` | No event belongs to this user at that ID |
+| `409` | The proposed event overlaps another event and conflicts are disabled |
 | `412` | Revision is stale; fetch the latest event before retrying |
 | `428` | Required `If-Match` header is missing |
 
@@ -138,6 +139,52 @@ values equal the current values. Repeating a completed deletion returns `404`.
 
 See [the event model](docs/event-model.md) for field rules and planned features.
 The API schema is available at `/documentation` and `/reference` when running.
+
+## Rate limits
+
+The API uses [@fastify/rate-limit](https://github.com/fastify/fastify-rate-limit).
+Defaults are 120 requests per IP, 120 reads per authenticated user, and 30 writes
+per authenticated user in a 60-second fixed window. Both IP and user limits
+apply. POST, PATCH and DELETE share the write budget; GET and HEAD share reads.
+Excess requests receive `429 Too Many Requests` and a `Retry-After` header in
+seconds. Wait for that delay before retrying. Rejected writes do not reach the
+event service. Invalid requests also consume the budgets they reach.
+
+`X-RateLimit-Scope` identifies the displayed budget (`ip`, `user-read` or
+`user-write`); `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset`
+report its limit, remaining requests and seconds until reset. Browser clients
+can read these headers and `Retry-After` through CORS.
+
+Configure positive integers using `RATE_LIMIT_IP_MAX`, `RATE_LIMIT_READ_MAX`,
+`RATE_LIMIT_WRITE_MAX` and `RATE_LIMIT_WINDOW_MS` (defaults 120, 120, 30, 60000).
+Blank values use defaults; invalid values fail startup. Counters live in this
+API process, reset on restart, and evict old keys at a bounded capacity. Use a
+shared store such as Redis before running multiple replicas. Tune the IP limit
+for users sharing a campus network. Do not blindly enable `trustProxy`: trust
+only your deployment's known proxies, otherwise IP headers could be forged.
+
+## Conflict preference
+
+`allowConflicts` replaces the former `isOptional` field in requests, responses
+and stored event types. It is required on creation, and optional in PATCH.
+It expresses permission to overlap other events, not optional attendance.
+The backend rejects overlapping POST and PATCH requests with `409` when the
+resulting event has `allowConflicts: false`. Explicitly setting it to true allows
+the event being saved to overlap; it does not hide existing events from conflict
+checks. Checks include timed and all-day events belonging to the same user,
+using Hong Kong midnight for all-day boundaries. Touching endpoints do not
+conflict, and an update excludes the event itself from its check.
+
+Each user's writes are serialized inside the current API process so simultaneous
+requests cannot both pass a check before saving. Other users can write
+independently. This protection assumes one API process and all writes using the
+service layer. Multiple replicas or direct database writers require a
+database-coordinated strategy before deployment; revision checks alone do not
+protect overlaps across different event documents.
+
+The old request field is rejected. Existing
+development records using the old field need recreation or an explicit migration
+with a chosen conflict preference; no database migration is performed here.
 
 ## Environment
 

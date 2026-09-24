@@ -19,7 +19,7 @@ const validEvent: CreateEventInput = {
   description: "Bring confirmation",
   location: "Campus clinic",
   eventType: "appointment",
-  isOptional: false,
+  allowConflicts: false,
   schedule: {
     kind: "timed",
     startsAt: "2026-10-05T10:00:00+08:00",
@@ -33,6 +33,10 @@ beforeAll(async () => {
     mongoTestUri: undefined,
     test: true,
     authSkip: false,
+    // CRUD tests exercise validation independently of traffic limits.
+    rateLimitIpMax: 10000,
+    rateLimitReadMax: 10000,
+    rateLimitWriteMax: 10000,
   });
   await app.ready();
 });
@@ -176,6 +180,7 @@ test.each([
   "updatedAt",
   "exceptions",
   "timeZone",
+  "isOptional",
 ])(
   "rejects client-supplied %s instead of silently stripping it",
   async (field) => {
@@ -204,7 +209,7 @@ const invalidChanges = [
   {
     schedule: { ...validEvent.schedule, startsAt: "2026-02-30T10:00:00+08:00" },
   },
-  { isOptional: "false" },
+  { allowConflicts: "false" },
   { title: "  " },
   { emailNotifications: { enabled: true, minutesBefore: [120, 120] } },
   { emailNotifications: { enabled: true, minutesBefore: ["120"] } },

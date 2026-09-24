@@ -16,6 +16,7 @@ import type {
 } from "fastify";
 import packageJson from "../package.json" with { type: "json" };
 import { type AppOptions, options } from "./options.js";
+import RateLimits from "./rate-limits.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,8 +46,16 @@ const app: FastifyPluginAsync<AppOptions> = async (
   // Register CORS
   await fastify.register(cors, {
     origin: "*",
-    exposedHeaders: ["ETag"],
+    exposedHeaders: [
+      "ETag",
+      "Retry-After",
+      "X-RateLimit-Scope",
+      "X-RateLimit-Limit",
+      "X-RateLimit-Remaining",
+      "X-RateLimit-Reset",
+    ],
   });
+  await fastify.register(RateLimits, opts);
 
   // Register Swagger & Swagger UI & Scalar
   await fastify.register(swagger, {

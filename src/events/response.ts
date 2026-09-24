@@ -44,7 +44,7 @@ export function toEventResponse(event: EventDocument): EventResponse {
       : {}),
     ...(event.location !== undefined ? { location: event.location } : {}),
     eventType: event.eventType,
-    isOptional: event.isOptional,
+    allowConflicts: event.allowConflicts,
     schedule:
       event.schedule.kind === "timed"
         ? {

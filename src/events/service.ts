@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { type Collection, type Filter, ObjectId } from "mongodb";
+import { assertNoEventConflict } from "./conflicts.js";
 import { applyCreateEventDefaults } from "./defaults.js";
 import type { EventDocument } from "./model.js";
 import type { ListEventsQuery } from "./query-schemas.js";
 import type { CreateEventInput } from "./schemas.js";
 import { EventValidationError, validateEvent } from "./validation.js";
+import { withEventWriteLock } from "./write-lock.js";
 
 /** Input must pass CreateEventSchema; ownerId must come from authentication. */
 export async function createEvent(
@@ -33,8 +35,11 @@ export async function createEvent(
     updatedAt: now,
   };
 
-  await collection.insertOne(event);
-  return event;
+  return withEventWriteLock(collection, ownerId, async () => {
+    await assertNoEventConflict(collection, event);
+    await collection.insertOne(event);
+    return event;
+  });
 }
 
 /** ID must pass EventIdParamsSchema; ownership is part of the database query. */
