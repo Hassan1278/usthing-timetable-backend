@@ -20,3 +20,9 @@ coverage/
 
 # cache
 .cache/
+
+# local working documentation
+/docs/container-verification.md
+/docs/event-model.md
+/docs/recurrence.md
+/docs/status-review.md

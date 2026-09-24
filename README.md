@@ -1,380 +1,214 @@
 # USThing Timetable API
 
-A small Fastify + TypeScript service with MongoDB built in. Bun runs it and Biome keeps it tidy. With no configuration at all, dev and tests spin up a throwaway in-memory MongoDB, so `bun install && bun run dev` is genuinely all it takes to get going.
+Backend for user-owned custom timetable events, built with Fastify, TypeScript,
+Bun and MongoDB. It supports CRUD, daily/weekly recurrence, individual occurrence
+exceptions, conflict checking and iCalendar (`.ics`) export. There is no frontend.
 
-## What you need
+## Quick start
 
-Bun 1.4.2 or newer. Older versions break the MongoDB driver; 1.3.14 will not work. Docker Desktop (or Docker Engine with Compose) can run the entire service and a persistent database.
-
-## Running with Docker
+Install Docker Engine with Compose, or Docker Desktop with WSL integration.
+From the repository root:
 
 ```sh
 docker compose up --build -d --wait
-curl http://localhost:3000/health
+curl --fail http://localhost:3000/health
 ```
 
-This builds the API image and starts it after MongoDB is healthy. The API is at
-http://localhost:3000 and documentation at http://localhost:3000/documentation.
-`/health` returns `200 { "status": "ok" }` when MongoDB responds and `503` when
-unavailable. The containers use their own network: the API connects to
-`mongodb://mongodb:27017/template-api`, not to localhost. The database name
-remains `template-api` for compatibility with existing data, independently of the
-package name `usthing-timetable-api`. Cleanup does not drop existing collections.
+Expected response: `{"status":"ok"}`. Open [Swagger UI](http://localhost:3000/documentation)
+for interactive API documentation or [Scalar](http://localhost:3000/reference)
+for an alternative view.
 
-The Dockerfile uses pinned Bun 1.4.2, frozen production dependencies, and a
-non-root runtime user. Bun executes TypeScript directly. The build context
-excludes local dependencies, caches, tests and `.env`; Compose passes only the
-explicit runtime settings. MongoDB is pinned to 8.3.4 and keeps data in the
-`mongo_data` named volume. The API waits for database health and has its own
-readiness health check.
+The API runs at `http://localhost:3000`. MongoDB uses a persistent named volume.
+Compose enables authentication and binds host ports to localhost. This is a local
+technical-test deployment with two sample accounts:
+
+| User | Bearer token |
+| --- | --- |
+| Alice | `alice-dev-token` |
+| Bob | `bob-dev-token` |
+
+These are public development credentials, not real student accounts. Each account
+can access only its own events. OAuth and user registration are not implemented.
 
 ```sh
-docker compose ps
-docker compose logs -f api
-docker compose down
+docker compose ps             # Service health
+docker compose logs -f api   # Application logs
+docker compose down          # Stop; preserve saved events
 ```
 
-`down` removes containers but keeps database data. Running `up --build -d --wait`
-again reuses that volume. **`docker compose down -v` deletes the volume and all
-its events.** Don't use `-v` when testing persistence.
+Running the startup command again reuses the database. **`docker compose down -v`
+deletes the database volume.** If ports are occupied, prefix Compose commands with
+`API_PORT=3001 MONGO_HOST_PORT=27019` and use the corresponding API port.
 
-Host ports are loopback-only for this local technical-test setup. Override
-`API_PORT` (default 3000) or `MONGO_HOST_PORT` (default 27018) if occupied. Inside
-the containers, ports remain 3000 and 27017. Compose explicitly disables
-`AUTH_SKIP` and uses the two documented sample accounts. This is a reproducible
-local deployment, not a public deployment with real credentials.
+## Try the API
 
-Keep one API replica: conflict locks and rate counters are process-local. Docker
-packages the service but does not turn those mechanisms into distributed locks.
-On Windows, start Docker Desktop and enable the distro under Settings →
-Resources → WSL Integration before running Docker commands from WSL.
-
-See [container verification](docs/container-verification.md) for verification
-status and the persistence check.
-
-## Running locally without the API container
-
-```sh
-bun install
-bun run dev
-```
-
-That serves http://localhost:3000. The first run downloads an in-memory MongoDB binary, roughly 150 MB, once. After that it's cached and startup is quick. If you'd rather have persistent data:
-
-```sh
-docker compose up -d mongodb
-cp .env.example .env
-```
-
-## Custom events
-
-`POST /events` creates a custom event for the authenticated user. Example using
-the local sample account:
+Create an event as Alice:
 
 ```sh
 curl -i http://localhost:3000/events \
   -H 'Authorization: Bearer alice-dev-token' \
   -H 'Content-Type: application/json' \
   -d '{
-    "title": "Doctor appointment",
+    "title": "Study session",
     "eventType": "appointment",
     "allowConflicts": false,
     "schedule": {
       "kind": "timed",
-      "startsAt": "2026-10-05T10:00:00+08:00",
-      "endsAt": "2026-10-05T11:00:00+08:00"
+      "startsAt": "2026-10-05T14:00:00+08:00",
+      "endsAt": "2026-10-05T15:00:00+08:00"
     }
   }'
 ```
 
-Success returns `201 Created` with the event, including its generated `id`,
-calendar `uid`, revision `1`, and timestamps. Timed responses use UTC ISO strings;
-the timetable remains fixed to `Asia/Hong_Kong`. All-day events instead use
-`{ "kind": "all-day", "startsOn": "2026-10-05", "endsOn": "2026-10-06" }`,
-where the end date is exclusive.
+Expect `201`, a generated `id`, revision `1` and `ETag: "1"`. Repeating the same
+request returns `409` because it overlaps the event just created. The server
+assigns ownership from authentication; clients cannot supply `ownerId`.
 
-The server derives ownership from the token. Unexpected fields (including
-`ownerId` and `timeZone`), invalid values, or an end not after the start return
-`400`. Missing or unknown credentials return `401`; malformed authorization
-headers return `400`. Rejected requests do not create an event.
-
-Email delivery is unavailable. Every event type defaults to
-`emailNotifications: { "enabled": false }`. Explicit `enabled: true` returns
-400 on creation, whole-event edits and occurrence edits. The optional field and
-future-compatible database types remain, but no reminders are scheduled or sent.
-On startup, legacy enabled settings are disabled and their preferences archived
-internally; affected event revisions increment. See the event model for details.
-
-See [recurrence behavior and API examples](docs/recurrence.md)
-for finite series, calendar occurrences, cancellation, overrides and restoration.
-
-### Exporting an ICS calendar
-
-Download the authenticated user's events and recurring series:
+Read the calendar week, including recurring occurrences:
 
 ```sh
-curl --fail 'http://localhost:3000/events/export.ics' \
-  -H 'Authorization: Bearer alice-dev-token' \
-  -o usthing-events.ics
-```
-
-Add `?from=2026-10-05&to=2026-10-12` to export a calendar week. The same
-paired Hong Kong dates and 1–93 day range rules apply as for JSON listing.
-Without dates, the export includes events across all dates. There is no
-`limit`/`after` pagination: up to 1000 parent documents are scanned. Recurrence
-processing and output budgets also apply; `413` reports an oversized selection. Nothing is silently truncated. Authentication and the shared
-read rate limit apply; other users' events are never included.
-
-The response is `text/calendar; charset=utf-8`, with an attachment filename and
-`Cache-Control: private, no-store`. Open the file in a calendar application.
-This is a downloaded snapshot, not a calendar subscription or two-way sync.
-
-`ical.js` serializes standard iCalendar fields: stable UID, title, description,
-location, start/end, update timestamp and sequence number. Timed events use UTC
-instants; all-day events use dates with an exclusive end. Fractional seconds
-round outwards to whole seconds for export. The timetable remains
-Hong Kong-based; a receiving app can display timed instants in its own timezone.
-Text is escaped, long lines are folded, line endings normalized, and invalid
-control characters omitted. Account identifiers, tokens, app-specific settings
-and notification instructions are excluded. Recurring series use finite RRULEs, EXDATE cancellations and RECURRENCE-ID
-overrides. Date filters select complete series, not clipped rules. ICS import
-is not implemented; export does not send emails.
-
-### Reading events
-
-All GET endpoints require the same bearer token:
-
-| Request | Result |
-| --- | --- |
-| `GET /events` | The user's non-recurring events across all dates, paginated |
-| `GET /events?from=2026-10-05&to=2026-10-12` | Normal events and recurring occurrences overlapping that Hong Kong calendar week |
-| `GET /events/:id` | One owned event, using the `id` returned by creation |
-
-`from` and `to` must either both be supplied or both omitted. They are date-only
-values interpreted at Hong Kong midnight. `to` is exclusive; the range must be
-1–93 days. Events crossing a boundary are included, but an event ending exactly
-at `from` or starting exactly at `to` is excluded. Ranged queries expand recurrence and apply exceptions. Without a date range,
-listing continues to exclude recurring parents. GET by ID returns the parent.
-
-Lists return `{ "items": [...], "nextCursor": "..." }`. The default page size
-is 50; set `limit` to an integer from 1 to 100. Pass `nextCursor` as `after` with
-the same range filters to request the next page. A null cursor means no further
-page. Results are ordered by parent ID and original occurrence start, not scheduled time; the UI can
-arrange them on its calendar. Pages are live reads, not a frozen snapshot.
-
-```sh
-curl 'http://localhost:3000/events?from=2026-10-05&to=2026-10-12&limit=50' \
+curl --fail 'http://localhost:3000/events?from=2026-10-05&to=2026-10-12' \
   -H 'Authorization: Bearer alice-dev-token'
 ```
 
-Invalid query values or malformed IDs return `400`. A missing event or an event
-owned by another user returns the same `404`. Client-supplied `ownerId` and
-`timeZone` query fields are rejected; ownership always comes from authentication.
-
-### Updating and deleting events
-
-`POST /events`, `GET /events/:id`, and successful PATCH responses include an
-`ETag` header containing the quoted revision, such as `"1"`. PATCH and DELETE
-require that value in `If-Match`. A list item also includes its numeric revision,
-which can be quoted to form the same header. This prevents stale clients from
-overwriting or deleting newer edits.
+Copy the returned event ID into this variable, then edit it:
 
 ```sh
-# Replace EVENT_ID with the ID returned by creation.
-curl -i -X PATCH 'http://localhost:3000/events/EVENT_ID' \
+EVENT_ID='paste-event-id-here'
+curl -i -X PATCH "http://localhost:3000/events/$EVENT_ID" \
   -H 'Authorization: Bearer alice-dev-token' \
-  -H 'If-Match: "1"' \
   -H 'Content-Type: application/json' \
-  -d '{"title":"Updated appointment","allowConflicts":true}'
+  -H 'If-Match: "1"' \
+  -d '{"title":"Updated study session"}'
 ```
 
-PATCH returns `200` with the updated event and next ETag. Only supplied fields
-change. At least one editable field is required. A supplied `schedule` or
-`emailNotifications` object replaces that whole object and must have a valid
-shape. An omitted notification field preserves existing reminders, even when
-`eventType` changes. Explicit `{ "enabled": true }` resets timings to the
-24-hour and 2-hour defaults. Use an empty string to clear description or location
-text; null is not accepted. Ownership, IDs, revision, timestamps and `timeZone`
-cannot be supplied in the body.
+Expect `200` and revision `2`. `If-Match` must contain the latest quoted revision;
+a stale value returns `412`. PATCH changes supplied fields only. Nested objects,
+such as `schedule`, are whole replacements, so supply their complete shape.
+
+Export Alice's calendar, then delete the example event:
 
 ```sh
-# Use the latest ETag: the example PATCH changes revision 1 to revision 2.
-curl -i -X DELETE 'http://localhost:3000/events/EVENT_ID' \
+curl --fail http://localhost:3000/events/export.ics \
+  -H 'Authorization: Bearer alice-dev-token' \
+  -o usthing-events.ics
+
+curl -i -X DELETE "http://localhost:3000/events/$EVENT_ID" \
   -H 'Authorization: Bearer alice-dev-token' \
   -H 'If-Match: "2"'
 ```
 
-DELETE returns `204` with no body. Deletion is permanent. Both mutations return:
+Deletion returns `204`. Export is a downloadable snapshot, not a subscription.
+
+## API contract
+
+All event routes require a bearer token. Missing or unknown credentials return
+`401`; malformed authorization headers return `400`. Foreign and missing event
+IDs both return `404`, avoiding disclosure of another user's events.
+
+| Method and path | Purpose |
+| --- | --- |
+| `POST /events` | Create an event or recurring series |
+| `GET /events` | Paginated non-recurring events across all dates |
+| `GET /events?from=...&to=...` | Paginated events and occurrences overlapping a date range |
+| `GET /events/:id` | Read one event or series parent |
+| `PATCH /events/:id` | Edit an event or whole series; requires `If-Match` |
+| `DELETE /events/:id` | Delete an event or whole series; requires `If-Match` |
+| `PATCH /events/:id/occurrences?originalStart=...` | Override one occurrence; requires `If-Match` |
+| `DELETE /events/:id/occurrences?originalStart=...` | Cancel one occurrence; requires `If-Match` |
+| `POST /events/:id/occurrences/restore?originalStart=...` | Restore one occurrence; requires `If-Match` |
+| `GET /events/export.ics` | Export events and series; optional `from`/`to` |
+| `GET /health` | Public database readiness: `200` or `503` |
+
+Important rules:
+
+- The timetable uses **Asia/Hong_Kong**. Client `timeZone` fields are rejected.
+  Timed inputs carry offsets; responses use UTC ISO timestamps. All-day schedules
+  use `startsOn`/`endsOn` dates, with an exclusive end.
+- Range queries require both dates and cover 1–93 days, with an exclusive `to`.
+  This viewing limit does not limit conflict checking to 93 days.
+- Lists return `{items, nextCursor}`. `limit` defaults to 50, maximum 100; pass
+  `nextCursor` as `after` with the same filters. Results use stable identity order,
+  not chronological order. Pagination is a live view, not a snapshot.
+- Optional `recurrence` accepts `daily` or `weekly`. Its inclusive `endsOn`
+  defaults to 12 calendar months after the first start and cannot exceed that.
+  Occurrences are calculated from a stored parent and its exceptions.
+- With `allowConflicts: false`, a proposed write must not overlap existing events
+  or occurrences belonging to that user. `true` permits that write to overlap;
+  existing events still participate in other conflict checks. Touching endpoints
+  are allowed.
+- Email delivery is disabled. Omission defaults to `{enabled: false}`;
+  `enabled: true` returns `400` on creation and all edits. Startup disables legacy
+  enabled settings, archives preferences internally and increments affected revisions.
+- ICS includes recurrence rules, cancellations and overrides. Date filters select
+  whole series, not clipped rules. Export and recurrence work are bounded;
+  oversized exports return `413` instead of silently truncating results.
 
 | Status | Meaning |
 | --- | --- |
-| `400` | Invalid input, ID or revision header; business validation failed |
-| `401` | Missing or unknown bearer token |
-| `404` | No event belongs to this user at that ID |
-| `409` | The proposed event overlaps another event and conflicts are disabled |
-| `412` | Revision is stale; fetch the latest event before retrying |
-| `428` | Required `If-Match` header is missing |
+| `400` | Invalid input or business rule |
+| `401` | Missing or unknown credentials |
+| `404` | Missing event, occurrence or ownership |
+| `409` | Disallowed overlap |
+| `412` | Stale revision: read the event again |
+| `428` | Missing required `If-Match` |
+| `429` | Rate limit: wait for `Retry-After` |
 
-The API accepts one quoted positive revision, not wildcard, weak or multiple
-ETags. Each successful PATCH increments the revision, even if the supplied
-values equal the current values. Repeating a completed deletion returns `404`.
+The running OpenAPI documentation describes endpoint-specific responses.
 
-See [the event model](docs/event-model.md) for field rules and planned features.
-The API schema is available at `/documentation` and `/reference` when running.
+## Development and checks
 
-## Rate limits
-
-The API uses [@fastify/rate-limit](https://github.com/fastify/fastify-rate-limit).
-Defaults are 120 requests per IP, 120 reads per authenticated user, and 30 writes
-per authenticated user in a 60-second fixed window. Both IP and user limits
-apply. POST, PATCH and DELETE share the write budget; GET and HEAD share reads.
-Excess requests receive `429 Too Many Requests` and a `Retry-After` header in
-seconds. Wait for that delay before retrying. Rejected writes do not reach the
-event service. Invalid requests also consume the budgets they reach.
-
-`X-RateLimit-Scope` identifies the displayed budget (`ip`, `user-read` or
-`user-write`); `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset`
-report its limit, remaining requests and seconds until reset. Browser clients
-can read these headers and `Retry-After` through CORS.
-
-Configure positive integers using `RATE_LIMIT_IP_MAX`, `RATE_LIMIT_READ_MAX`,
-`RATE_LIMIT_WRITE_MAX` and `RATE_LIMIT_WINDOW_MS` (defaults 120, 120, 30, 60000).
-Blank values use defaults; invalid values fail startup. Counters live in this
-API process, reset on restart, and evict old keys at a bounded capacity. Use a
-shared store such as Redis before running multiple replicas. Tune the IP limit
-for users sharing a campus network. Do not blindly enable `trustProxy`: trust
-only your deployment's known proxies, otherwise IP headers could be forged.
-
-## Conflict preference
-
-`allowConflicts` replaces the former `isOptional` field in requests, responses
-and stored event types. It is required on creation, and optional in PATCH.
-It expresses permission to overlap other events, not optional attendance.
-The backend rejects overlapping POST and PATCH requests with `409` when the
-resulting event has `allowConflicts: false`. Explicitly setting it to true allows
-the event being saved to overlap; it does not hide existing events from conflict
-checks. Checks include timed and all-day events belonging to the same user,
-using Hong Kong midnight for all-day boundaries. Touching endpoints do not
-conflict, and an update excludes the event itself from its check.
-
-Each user's writes are serialized inside the current API process so simultaneous
-requests cannot both pass a check before saving. Other users can write
-independently. This protection assumes one API process and all writes using the
-service layer. Multiple replicas or direct database writers require a
-database-coordinated strategy before deployment; revision checks alone do not
-protect overlaps across different event documents.
-
-The old request field is rejected. Existing
-development records using the old field need recreation or an explicit migration
-with a chosen conflict preference; no database migration is performed here.
-
-## Environment
-
-Everything here is optional. Copy `.env.example` to `.env` and set what you need.
-
-| Variable | What it does |
-| --- | --- |
-| `MONGO_URI` | MongoDB URI for dev. Unset means in-memory. |
-| `MONGO_TEST_URI` | Same thing, but for `bun test`. |
-| `AUTH_SKIP` | Set to `true` to turn auth off locally. |
-
-## Scripts
-
-| Script | What it does |
-| --- | --- |
-| `bun run dev` | Dev server, watch mode, debug logs |
-| `bun run start` | Same without watch, info logs |
-| `bun run test` | Tests, with coverage |
-| `bun run compile` | Type-check `src` and `test` with `tsc` |
-| `bun run check` | Read-only formatting + lint check |
-| `bun run lint` | Auto-fix lint issues |
-| `bun run fmt` | Auto-format the repo |
-
-## Auth
-
-Users and their tokens live in `src/auth/users.ts`. There are two sample users, alice and bob, and their tokens act as passwords, so replace them before deploying anything real. Protected routes want a bearer header:
+Use Bun 1.4.2 or newer:
 
 ```sh
-curl http://localhost:3000/events
-# 401 Missing Authorization Header
-
-curl -H "Authorization: Bearer alice-dev-token" http://localhost:3000/events
-# JSON containing Alice's events
+bun install --frozen-lockfile
+bun run dev
 ```
 
-To protect your own routes, wrap them in a `fastify.withAuth` scope. Everything inside is protected, the auth error responses get documented for you, and `request.user` is typed non-null:
+Without a database URI in non-production mode, the app starts a temporary real
+MongoDB server using `mongodb-memory-server`. Its first use may download a MongoDB
+binary; this database is disposable. For persistent local development, start
+`docker compose up -d mongodb` and set
+`MONGO_URI=mongodb://localhost:27018/template-api` in `.env`. See `.env.example`.
+Do not start both the local API and the container API on the same host port.
 
-```typescript
-const protectedRoutes: FastifyPluginAsync = async (
-  fastify: FastifyTypebox,
-): Promise<void> => {
-  fastify.withAuth(async (fastify) => {
-    fastify.get(
-      "/",
-      {
-        schema: {
-          summary: "Auth Example",
-          tags: ["Auth"],
-          security: [{ Auth: [] }],
-          response: {
-            200: Type.String({
-              description: "The authenticated user's username.",
-            }),
-          },
-        },
-      },
-      async (request) => request.user.username,
-    );
-  });
-};
+```sh
+bun run compile  # Type-check source and tests
+bun run check    # Formatting and lint checks
+bun run test     # Unit and HTTP integration tests, with coverage
 ```
 
-Setting `AUTH_SKIP=true` turns verification off completely. Scoped requests then come in as a fixed anonymous user (`{ username: "anonymous", name: null }`, plus an `X-Auth-Skip: true` response header), and stale tokens in your HTTP client stop causing mystery 401s.
+The latest verified suite has 370 passing tests. Integration tests use Fastify
+injection and temporary real MongoDB instances to exercise persistence, ownership,
+conflicts, revisions, recurrence and failure cases. This is not a production load
+test. The Docker build installs production dependencies but does not run these checks.
 
-## API docs
+| Configuration | Default / purpose |
+| --- | --- |
+| `MONGO_URI` | Non-test database URI; temporary database in development when unset |
+| `MONGO_TEST_URI` | Test database override; use only a disposable database |
+| `AUTH_SKIP` | Local development bypass; leave disabled for normal use |
+| `RATE_LIMIT_IP_MAX` | 120 requests per IP per window |
+| `RATE_LIMIT_READ_MAX` | 120 reads per user per window |
+| `RATE_LIMIT_WRITE_MAX` | 30 writes per user per window |
+| `RATE_LIMIT_WINDOW_MS` | 60000 milliseconds |
 
-Swagger UI is at http://localhost:3000/documentation, Scalar at http://localhost:3000/reference.
+Compose explicitly supplies its internal MongoDB URI and disables auth bypass.
+The legacy database name `template-api` is retained to preserve existing data.
+Rate settings must be positive integers. IP checks precede authentication; reads
+and writes then consume separate user budgets. Writes share one budget across
+methods, including occurrence restoration. Counters reset on API restart.
 
-## Where things live
+## Architecture and scope
 
-```text
-src/
-  app.ts                # Build and configure Fastify
-  options.ts            # Environment configuration
-  auth/                 # Sample user identities
-  plugins/              # Authentication, MongoDB and HTTP error helpers
-  events/
-    schemas/            # Runtime input contracts and derived types
-    domain/             # Stored event type, defaults and business validation
-    services/           # Database operations, conflict checks and write locking
-    recurrence/         # Recurrence defaults, generation and exception application
-    http/               # Response mapping, occurrence routes and ICS downloads
-  routes/
-    events/             # Main event endpoint registration
-    health/             # API/database readiness
-test/
-  events/               # Event rules, schemas, storage and recurrence unit tests
-  routes/
-    events/             # Event HTTP integration tests, grouped by behavior
-    auth.test.ts        # Auth plugin tests using test-only probe routes
-    auth-schema.test.ts # Auth/OpenAPI contract tests
-  ...                   # Application, configuration and database tests
-```
+Read [architecture](docs/architecture.md) for the folder structure, request flow
+and design tradeoffs.
 
-Start in `src/routes/events/index.ts` to follow a request. Request contracts live
-in `events/schemas`; persistence and conflict operations live in `events/services`.
-Recurrence calculations live together in `events/recurrence`. Shared event types,
-defaults and validation live in `events/domain`; HTTP-specific response and
-calendar download handling live in `events/http`.
+Run **one API process**: write locks and rate counters are process-local. Multiple
+replicas require shared counters and database-coordinated conflict protection.
+Before public deployment, replace sample authentication, configure HTTPS and
+trusted proxies, and verify capacity under realistic load.
 
-Only `src/routes` is scanned by Fastify's route autoloader. Files under
-`events/http` are explicitly imported helpers, not independently registered
-routes. This keeps moving a helper from accidentally exposing another endpoint.
-
-## Tests
-
-`bun run test` runs everything. Route tests exercise each plugin on a bare Fastify instance; the Mongo test boots the whole app, plugins autoloaded and collections created, against the in-memory server unless `MONGO_TEST_URI` is set. No external services anywhere.
-
-## Adding your own stuff
-
-New routes go in a folder under `src/routes/`; the autoload picks them up, and an exported `autoPrefix` controls the URL prefix if you want one. New collections and their indexes go in `src/plugins/init-mongo.ts`, following the `events` pattern, and show up as `fastify.collections.<name>`.
+ICS import, email delivery, infinite recurrence and “this and following” series
+splitting are outside the implemented scope. MCP is not implemented; recurrence
+and ICS export provide the additional features for this technical test.
