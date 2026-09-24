@@ -1,5 +1,7 @@
 import { type Static, Type } from "typebox";
 
+export const CALENDAR_RANGE_MAX_DAYS = 93;
+
 const ObjectIdStringSchema = Type.String({ pattern: "^[a-fA-F0-9]{24}$" });
 
 export const EventIdParamsSchema = Type.Object(
@@ -13,7 +15,12 @@ export const ListEventsQuerySchema = Type.Object(
     to: Type.Optional(Type.String({ format: "date" })),
     // URL query values are strings; only explicit integer text is accepted.
     limit: Type.Optional(Type.String({ pattern: "^(?:[1-9][0-9]?|100)$" })),
-    after: Type.Optional(ObjectIdStringSchema),
+    after: Type.Optional(
+      Type.String({
+        maxLength: 128,
+        pattern: "^[a-fA-F0-9]{24}(?:~[0-9TZ:.\\-]+)?$",
+      }),
+    ),
   },
   { additionalProperties: false },
 );

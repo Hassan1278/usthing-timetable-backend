@@ -1,8 +1,12 @@
 import type { Collection, ObjectId } from "mongodb";
-import type { EventDocument, StoredSchedule } from "./model.js";
-
-const DAY_MS = 86_400_000;
-const HK_OFFSET_MS = 8 * 60 * 60 * 1000;
+import type { EventDocument } from "./model.js";
+import {
+  CalendarCapacityError,
+  expandEvent,
+  interval,
+  MAX_EXPANDED_OCCURRENCES,
+  MAX_SCANNED_EVENTS,
+} from "./series.js";
 
 export class EventConflictError extends Error {
   constructor() {
@@ -13,51 +17,72 @@ export class EventConflictError extends Error {
   }
 }
 
-/** Call under the owner's write lock; never rely on a frontend conflict check. */
+/** All finite occurrences, under the owner's lock. Limits fail closed before writes. */
 export async function assertNoEventConflict(
   collection: Collection<EventDocument>,
-  candidate: Pick<EventDocument, "ownerId" | "schedule" | "allowConflicts">,
+  candidate: EventDocument,
   excludeId?: ObjectId,
 ): Promise<void> {
-  if (candidate.allowConflicts) return;
-  const { start, end } = interval(candidate.schedule);
-  const startDay = new Date(start.getTime() + HK_OFFSET_MS)
-    .toISOString()
-    .slice(0, 10);
-  // All-day ends are exclusive. Round a timed end up to the next HK midnight,
-  // unless it is already midnight; this preserves exact touching boundaries.
-  const endDay = new Date(
-    Math.ceil((end.getTime() + HK_OFFSET_MS) / DAY_MS) * DAY_MS,
-  )
-    .toISOString()
-    .slice(0, 10);
-  const conflict = await collection.findOne(
-    {
+  const proposed = expandEvent(candidate)
+    .map((event) => interval(event.schedule))
+    .sort((a, b) => a.start - b.start);
+  if (candidate.allowConflicts || proposed.length === 0) return;
+  let furthestEnd = -Infinity;
+  for (const item of proposed) {
+    if (item.start < furthestEnd) throw new EventConflictError();
+    furthestEnd = Math.max(furthestEnd, item.end);
+  }
+  const start = proposed[0]!.start;
+  const end = furthestEnd;
+  const from = new Date(start + 28800000).toISOString().slice(0, 10);
+  const roundedEnd = new Date(
+    Math.ceil((end + 28800000) / 86400000) * 86400000,
+  ).toISOString();
+  // An exclusive ceiling beyond year 9999 sorts after every supported date.
+  const to = roundedEnd.startsWith("+")
+    ? "9999-12-32"
+    : roundedEnd.slice(0, 10);
+  const cursor = collection
+    .find({
       ownerId: candidate.ownerId,
       ...(excludeId ? { _id: { $ne: excludeId } } : {}),
       $or: [
+        { recurrence: { $exists: true } },
         {
           "schedule.kind": "timed",
-          "schedule.startsAt": { $lt: end },
-          "schedule.endsAt": { $gt: start },
+          "schedule.startsAt": { $lt: new Date(end) },
+          "schedule.endsAt": { $gt: new Date(start) },
         },
         {
           "schedule.kind": "all-day",
-          "schedule.startsOn": { $lt: endDay },
-          "schedule.endsOn": { $gt: startDay },
+          "schedule.startsOn": { $lt: to },
+          "schedule.endsOn": { $gt: from },
         },
       ],
-    },
-    { projection: { _id: 1 } },
-  );
-  if (conflict) throw new EventConflictError();
-}
-
-function interval(schedule: StoredSchedule): { start: Date; end: Date } {
-  return schedule.kind === "timed"
-    ? { start: schedule.startsAt, end: schedule.endsAt }
-    : {
-        start: new Date(`${schedule.startsOn}T00:00:00+08:00`),
-        end: new Date(`${schedule.endsOn}T00:00:00+08:00`),
-      };
+    })
+    .limit(MAX_SCANNED_EVENTS + 1)
+    .maxTimeMS(5000)
+    .batchSize(10);
+  let scanned = 0;
+  const budget = { remaining: MAX_EXPANDED_OCCURRENCES - proposed.length };
+  try {
+    for await (const event of cursor) {
+      if (++scanned > MAX_SCANNED_EVENTS) throw new CalendarCapacityError();
+      const existing = expandEvent(event, budget)
+        .map((item) => interval(item.schedule))
+        .sort((a, b) => a.start - b.start);
+      let a = 0,
+        b = 0;
+      while (a < proposed.length && b < existing.length) {
+        const left = proposed[a]!,
+          right = existing[b]!;
+        if (left.start < right.end && right.start < left.end)
+          throw new EventConflictError();
+        if (left.end <= right.start) a++;
+        else b++;
+      }
+    }
+  } finally {
+    await cursor.close();
+  }
 }

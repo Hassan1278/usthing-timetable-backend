@@ -1,10 +1,11 @@
 import { type Collection, ObjectId } from "mongodb";
 import { Compile } from "typebox/compile";
 import { assertNoEventConflict } from "./conflicts.js";
-import { resolveEmailNotifications } from "./defaults.js";
+import { applyCreateEventDefaults } from "./defaults.js";
 import type { EventDocument } from "./model.js";
 import type { PatchEventInput } from "./mutation-schemas.js";
 import { type CreateEventInput, CreateEventSchema } from "./schemas.js";
+import { eventInput, expandEvent, storedSchedule } from "./series.js";
 import { getEvent } from "./service.js";
 import { EventValidationError, validateEvent } from "./validation.js";
 import { withEventWriteLock } from "./write-lock.js";
@@ -31,57 +32,45 @@ export async function updateEvent(
     if (!current) return null;
     if (current.revision !== expectedRevision) throw new EventRevisionError();
 
-    const candidate: CreateEventInput = {
-      title: current.title,
-      ...(current.description !== undefined
-        ? { description: current.description }
-        : {}),
-      ...(current.location !== undefined ? { location: current.location } : {}),
-      eventType: current.eventType,
-      allowConflicts: current.allowConflicts,
-      schedule:
-        current.schedule.kind === "timed"
-          ? {
-              kind: "timed",
-              startsAt: current.schedule.startsAt.toISOString(),
-              endsAt: current.schedule.endsAt.toISOString(),
-            }
-          : { ...current.schedule },
-      emailNotifications: current.emailNotifications,
-      ...patch,
-    };
-    if (!candidateValidator.Check(candidate)) {
+    const { clearExceptions, recurrence, ...fields } = patch;
+    const structuralChange =
+      patch.schedule !== undefined || recurrence !== undefined;
+    if (structuralChange && current.exceptions?.length && !clearExceptions)
+      throw new EventValidationError(
+        "Changing a series schedule or rule requires clearExceptions: true.",
+      );
+    const candidate: CreateEventInput = { ...eventInput(current), ...fields };
+    if (recurrence === null) delete candidate.recurrence;
+    else if (recurrence !== undefined) candidate.recurrence = recurrence;
+    if (!candidateValidator.Check(candidate))
       throw new EventValidationError(
         "Updated event does not match the event schema.",
       );
-    }
     validateEvent(candidate);
-
-    const schedule =
-      candidate.schedule.kind === "timed"
-        ? {
-            kind: "timed" as const,
-            startsAt: new Date(candidate.schedule.startsAt),
-            endsAt: new Date(candidate.schedule.endsAt),
-          }
-        : { ...candidate.schedule };
-    await assertNoEventConflict(
-      collection,
-      { ownerId, schedule, allowConflicts: candidate.allowConflicts },
-      current._id,
-    );
+    const normalized = applyCreateEventDefaults(candidate);
+    const next: EventDocument = {
+      ...current,
+      ...normalized,
+      schedule: storedSchedule(normalized.schedule),
+      exceptions: clearExceptions ? [] : (current.exceptions ?? []),
+      updatedAt: new Date(),
+    };
+    if (!normalized.recurrence) delete next.recurrence;
+    expandEvent(next);
+    await assertNoEventConflict(collection, next, current._id);
 
     const updated = await collection.findOneAndUpdate(
       { _id: current._id, ownerId, revision: expectedRevision },
       {
         $set: {
-          ...candidate,
-          schedule,
-          emailNotifications:
-            patch.emailNotifications === undefined
-              ? current.emailNotifications
-              : resolveEmailNotifications(patch.emailNotifications),
-          updatedAt: new Date(),
+          ...normalized,
+          schedule: next.schedule,
+          ...(next.exceptions?.length ? { exceptions: next.exceptions } : {}),
+          updatedAt: next.updatedAt,
+        },
+        $unset: {
+          ...(!normalized.recurrence ? { recurrence: "" as const } : {}),
+          ...(!next.exceptions?.length ? { exceptions: "" as const } : {}),
         },
         $inc: { revision: 1 },
       },

@@ -38,6 +38,16 @@ test("POST, PATCH and DELETE share the write budget; denied requests cannot muta
   const id = created.json().id;
   const before = await app.collections.events.find({}).toArray();
   const requests = [
+    app.inject({
+      method: "DELETE",
+      url: `/events/${id}/occurrences?originalStart=2026-10-05`,
+      headers: { ...headers, "if-match": '"1"' },
+    }),
+    app.inject({
+      method: "POST",
+      url: `/events/${id}/occurrences/restore?originalStart=2026-10-05`,
+      headers: { ...headers, "if-match": '"1"' },
+    }),
     app.inject({ method: "POST", url: "/events", headers, payload }),
     app.inject({
       method: "PATCH",

@@ -33,9 +33,9 @@ boundary is also checked in the query; an index does not replace overlap rules.
 Indexes do not enforce authorization: every event operation must still filter
 by the authenticated owner. No MongoDB collection validator is installed yet.
 
-The current storage type covers non-recurring events. The recurrence and
-exception fields below describe the planned extension; their concrete types
-will be added with that feature.
+The storage type covers normal events and finite recurring series, with resolved
+recurrence rules and embedded cancellation or modification exceptions.
+See [recurrence.md](recurrence.md) for the complete endpoint and limit contract.
 
 ## Reading events
 
@@ -47,9 +47,8 @@ event and another owner's event both return `404`; an invalid ID returns `400`.
 with an exclusive end. Timed overlaps use BSON dates with boundaries at Hong
 Kong midnight; all-day overlaps compare date strings. Both use start-before-end
 and end-after-start inequalities, including events spanning the entire window.
-The current query excludes documents where `recurrence` exists. When recurrence
-is implemented, the range query will expand series into occurrences; the
-unfiltered listing will continue to exclude them.
+Ranged queries expand recurring series and apply exceptions before overlap
+filtering, including moved-in instances. Unfiltered listing excludes series.
 
 `limit` defaults to 50 and accepts integer query text from 1 to 100. Lists use
 ascending `_id` order with an optional `after` ObjectId cursor and return
@@ -63,7 +62,7 @@ the service validates paired range dates and duration before querying MongoDB.
 
 `GET /events/export.ics` uses the same authenticated owner and optional paired
 Hong Kong range filters as JSON listing. It returns a complete selection up to
-1000 non-recurring events; larger selections return 413 with no partial file.
+1000 scanned parent events; larger selections return 413 with no partial file.
 It rejects pagination and timezone parameters. An empty selection produces a
 valid calendar without VEVENT entries. The shared authenticated read budget applies.
 
@@ -74,6 +73,8 @@ are UTC, and all-day values use VALUE=DATE with an exclusive end. Fractional sec
 round outwards (start down, end up), because iCalendar has second precision;
 this prevents a sub-second event from becoming a zero-length interval. User text is
 escaped, CRLF/bare CR are normalized to LF, and invalid controls are omitted.
+Recurring parents use finite RRULEs; cancellation and modification exceptions
+use EXDATE and RECURRENCE-ID. Range filters select complete matching series.
 The download excludes owner IDs, tokens, app-specific settings and alarms.
 
 This is a snapshot export, not synchronization or import. The endpoint sends
@@ -154,14 +155,38 @@ turning the stored dates into UTC dates.
 An event without `recurrence` occurs once. A recurring series is stored once,
 and its occurrences are calculated for a requested date range.
 
-The recurrence model must support daily, weekly, monthly, and yearly frequency;
-a positive interval; calendar selectors; and an optional end date or occurrence
-count. For example, a weekly club meeting can repeat every Monday and Wednesday
-until the end of the semester.
+The optional `recurrence` field applies to the existing timed or all-day event.
+The schedule defines its first occurrence and duration; it is still required.
+Supported frequencies are `daily` (every day) and `weekly` (every seven days,
+on the first occurrence's weekday), in the fixed Hong Kong timetable.
 
-The precise recurrence request schema will be specified in the recurrence
-milestone, including mappings to ICS rules. Open-ended series are permitted,
-but expansion must have date-range, iteration, and output limits.
+```json
+{
+  "recurrence": {
+    "frequency": "weekly",
+    "endsOn": "2027-05-31"
+  }
+}
+```
+
+`endsOn` is an optional date-only, inclusive last occurrence **start** date.
+Omitting it means 12 calendar months after the first Hong Kong start date,
+not after today. February 29 clamps to February 28 the following year. Explicit
+ends must be on or after the first start date and no later than that default.
+The final occurrence may finish after this date. There are no infinite series.
+Omitting `recurrence` means a single event; null and empty recurrence objects
+are invalid. Interval, count, weekday selectors, timezone fields, monthly/yearly
+frequencies and inline exceptions are not accepted.
+
+`src/events/recurrence-schema.ts` supplies the strict input shape and types.
+`src/events/recurrence.ts` supplies a pure, tested end-date resolver that must run
+after schema validation. Schema validation checks structure and calendar-date
+validity; the resolver checks schedule-relative limits without mutating input.
+The resolved end is saved once and preserved on reads and unrelated edits.
+
+Recurrence is enabled for create/read/update/delete, full-series conflict checks,
+individual occurrence operations, and ICS export. The parent embeds its exceptions
+so one atomic revision-protected update saves an occurrence change.
 
 Each exception identifies an occurrence by its **original scheduled start**,
 even if that occurrence moves to another date. An exception either cancels the
@@ -171,6 +196,46 @@ ownership or create a nested recurring series.
 Changing a series schedule or recurrence while exceptions exist requires the
 user to explicitly clear those exceptions. Metadata-only edits preserve them.
 Editing “this and all future occurrences” is outside the initial version.
+
+## Bounded occurrence generation
+
+`src/events/occurrences.ts` generates timed or all-day schedules from a source
+schedule, optional **resolved** recurrence, and a required `from`/`to` range.
+It validates all inputs at runtime, including unknown fields and schedule order.
+Date ranges are exclusive at `to`, use Hong Kong midnight and allow 1–93 days.
+A missing recurrence means zero or one occurrence; an unresolved recurrence is
+rejected rather than receiving a moving end-date default on reads.
+
+For period P and original interval [start, end), candidate indexes are:
+
+```text
+first = max(0, floor((rangeStart - end) / P) + 1)
+last  = min(lastSeriesIndex, ceil((rangeEnd - start) / P) - 1)
+```
+
+This includes occurrences that begin before the range and finish inside it,
+while excluding exact endpoint touches. Daily/weekly periods use fixed 24-hour
+Hong Kong days. The recurrence end limits occurrence starts, not their finishes.
+Only matching indexes are generated; distant ranges do not cause a walk through
+all intervening dates. A finite 12-month daily series has at most 367 starts,
+including both endpoints across a leap year. Longer-duration events may overlap
+one another, so the generator returns them all rather than hiding conflicts.
+Overflow or invalid rules fail without partial output. This low-level helper accepts only a base rule; `series.ts` applies validated
+exceptions before reads and conflict checks.
+
+Generated results are not database records and do not authorize any operation.
+Each has an `originalStart` (UTC timestamp for timed events, date for all-day
+ones) and schedule. HTTP services load the series using the
+**authenticated owner**, pair its ID with originalStart, and revalidate occurrence
+membership for edits/deletions. Never accept a client-generated occurrence as
+proof of ownership or of a valid appointment. Normal reads must not write the
+occurrences to MongoDB.
+
+Ranged GET calls this machinery through the bounded calendar read service.
+Full-series generation is separate from the 93-day viewing limit: all finite
+occurrences are checked on writes. Scans have a 1000-document and 100,000-start
+budget and fail with 413 instead of truncating. Auth, revisions, per-owner locks
+and rate limits apply to normal and occurrence operations alike.
 
 ## Allowing conflicts
 
@@ -191,9 +256,8 @@ existingStart < proposedEnd AND existingEnd > proposedStart
 An event ending exactly when another starts does not conflict. The current API
 returns a conflict message; a detailed conflict-list response is future work.
 
-Current checks cover the user's stored non-recurring timed and all-day events.
-Recurring occurrences, exclusions and moved instances must be incorporated when
-recurrence is implemented; the current model does not support them.
+Current checks cover normal events and every effective recurring occurrence,
+including self-overlap, cancellations and modified schedules.
 
 ## Email notifications
 
@@ -269,7 +333,7 @@ for explicitly supplied notification settings. Import remains future work.
 
 Before insertion, the server validates the request, resolves reminder defaults,
 normalizes schedule values, and adds the event ID, owner ID, calendar UID,
-revision, and timestamps. Recurrence and exception storage are future work.
+revision, timestamps, resolved recurrence and embedded exceptions.
 
 ## Validation and implementation order
 
@@ -305,7 +369,8 @@ timestamps represent the same instants in the fixed Hong Kong timetable.
 
 `src/events/mutation-schemas.ts` derives the PATCH body from the create schema,
 making only top-level fields optional and rejecting empty patches. Nested
-schedule and email objects replace their previous values. Null is not accepted;
+schedule, recurrence and email objects replace their previous values. Only
+recurrence accepts null, which removes repetition;
 an empty description or location string clears its displayed text.
 
 `src/events/mutations.ts` reads the owned event and merges permitted fields,
@@ -330,8 +395,8 @@ There is no background job queue for CRUD.
 
 `src/events/conflicts.ts` checks half-open intervals against the same owner's
 stored events, converting all-day boundaries to Hong Kong instants. PATCH
-excludes its own ID. The database query projects only an ID and stops at the
-first overlap. It includes existing events regardless of their allowConflicts
+excludes its own ID. A bounded cursor fetches potentially relevant normal
+events and recurring parents; effective intervals are compared in start order. It includes existing events regardless of their allowConflicts
 setting; the candidate's flag determines whether the save may proceed.
 
 `src/events/write-lock.ts` serializes create, update and delete for one owner
@@ -347,7 +412,7 @@ serialize competing calendar writes.
 
 Base CRUD, input validation, defaults, storage types, indexes and tests are
 implemented. Basic backend conflict rejection is also implemented. Remaining
-milestones include recurrence and reminder delivery. ICS export is implemented;
+milestones include reminder delivery. Recurrence and ICS export are implemented;
 ICS import is outside the current scope. API
 container setup is implemented and verified; results are recorded in
 [container verification](container-verification.md). Each milestone includes tests and documentation updates.

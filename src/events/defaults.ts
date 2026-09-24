@@ -1,11 +1,17 @@
+import { resolveRecurrence } from "./recurrence.js";
+import type { ResolvedRecurrence } from "./recurrence-schema.js";
 import type { CreateEventInput, EmailNotificationsInput } from "./schemas.js";
 
 export type ResolvedEmailNotifications =
   | { enabled: false }
   | { enabled: true; minutesBefore: number[] };
 
-export type EventWithDefaults = Omit<CreateEventInput, "emailNotifications"> & {
+export type EventWithDefaults = Omit<
+  CreateEventInput,
+  "emailNotifications" | "recurrence"
+> & {
   emailNotifications: ResolvedEmailNotifications;
+  recurrence?: ResolvedRecurrence;
 };
 
 const DEFAULT_REMINDER_MINUTES = [1440, 120] as const;
@@ -35,5 +41,11 @@ export function applyCreateEventDefaults(
     enabled: input.eventType === "appointment",
   };
 
-  return { ...input, emailNotifications: resolveEmailNotifications(settings) };
+  const { recurrence, ...fields } = input;
+  const resolved = resolveRecurrence(input.schedule, recurrence);
+  return {
+    ...fields,
+    emailNotifications: resolveEmailNotifications(settings),
+    ...(resolved ? { recurrence: resolved } : {}),
+  };
 }

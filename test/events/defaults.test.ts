@@ -103,7 +103,7 @@ test("all-day events allowing conflicts retain their details and reminder defaul
   const before = structuredClone(input);
   const result = applyCreateEventDefaults(input);
 
-  expect(result).toEqual({
+  expect<unknown>(result).toEqual({
     ...before,
     emailNotifications: { enabled: true, minutesBefore: [1440, 120] },
   });

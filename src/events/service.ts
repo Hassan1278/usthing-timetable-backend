@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { type Collection, type Filter, ObjectId } from "mongodb";
+import { listCalendarOccurrences } from "./calendar-read.js";
 import { assertNoEventConflict } from "./conflicts.js";
 import { applyCreateEventDefaults } from "./defaults.js";
 import type { EventDocument } from "./model.js";
-import type { ListEventsQuery } from "./query-schemas.js";
+import {
+  CALENDAR_RANGE_MAX_DAYS,
+  type ListEventsQuery,
+} from "./query-schemas.js";
 import type { CreateEventInput } from "./schemas.js";
+import type { ExpandedEvent } from "./series.js";
+import { expandEvent } from "./series.js";
 import { EventValidationError, validateEvent } from "./validation.js";
 import { withEventWriteLock } from "./write-lock.js";
 
@@ -35,6 +41,7 @@ export async function createEvent(
     updatedAt: now,
   };
 
+  expandEvent(event);
   return withEventWriteLock(collection, ownerId, async () => {
     await assertNoEventConflict(collection, event);
     await collection.insertOne(event);
@@ -51,12 +58,16 @@ export async function getEvent(
   return collection.findOne({ _id: new ObjectId(id), ownerId });
 }
 
-/** Query must pass ListEventsQuerySchema. Recurrence expansion is future work. */
+/** Query must pass ListEventsQuerySchema. Ranged reads expand finite series. */
 export async function listEvents(
   collection: Collection<EventDocument>,
   query: ListEventsQuery,
   ownerId: string,
-): Promise<{ events: EventDocument[]; nextCursor: string | null }> {
+): Promise<{ events: ExpandedEvent[]; nextCursor: string | null }> {
+  if (query.from !== undefined && query.to !== undefined)
+    return listCalendarOccurrences(collection, query, ownerId);
+  if (query.after?.includes("~"))
+    throw new EventValidationError("Occurrence cursors require a date range.");
   const filter = buildEventFilter(query, ownerId);
 
   const limit = Number(query.limit ?? "50");
@@ -95,7 +106,7 @@ export function buildEventFilter(
     const start = new Date(`${from}T00:00:00+08:00`);
     const end = new Date(`${to}T00:00:00+08:00`);
     const days = (end.getTime() - start.getTime()) / 86_400_000;
-    if (!(days > 0 && days <= 93)) {
+    if (!(days > 0 && days <= CALENDAR_RANGE_MAX_DAYS)) {
       throw new EventValidationError(
         "Date range must be between 1 and 93 days.",
       );

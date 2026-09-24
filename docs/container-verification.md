@@ -59,3 +59,12 @@ API_PORT=3001 MONGO_HOST_PORT=27019 docker compose -p usthing-check up --build -
 The project name also isolates the database volume. Repeat those port settings
 and `-p usthing-check` for subsequent Compose commands. No host Bun installation
 is needed to run the containers, only Docker and Compose.
+
+## Recurrence verification
+
+After recurrence integration, the full suite passes 371 tests with TypeScript
+and Biome checks. The production image was rebuilt and an isolated Compose
+project verified series creation, later-date expansion, cancellation, persistence
+after restarting the API, owner isolation, recurring ICS export, restoration and
+whole-series deletion. The scratch stack uses separate ports and a separate
+volume; no development volume is reset.

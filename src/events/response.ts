@@ -1,10 +1,15 @@
 import { type Static, Type } from "typebox";
-import type { EventDocument } from "./model.js";
+import { ExceptionSchema } from "./exception-schema.js";
+import { ResolvedRecurrenceSchema } from "./recurrence-schema.js";
 import { CreateEventSchema, EmailNotificationsSchema } from "./schemas.js";
+import type { ExpandedEvent } from "./series.js";
 
 export const EventResponseSchema = Type.Object(
   {
     ...CreateEventSchema.properties,
+    recurrence: Type.Optional(ResolvedRecurrenceSchema),
+    exceptions: Type.Optional(Type.Array(ExceptionSchema, { maxItems: 367 })),
+    originalStart: Type.Optional(Type.String()),
     // Enabled reminders always include resolved timings in responses.
     emailNotifications: Type.Union([
       EmailNotificationsSchema.anyOf[0],
@@ -24,10 +29,7 @@ export type EventResponse = Static<typeof EventResponseSchema>;
 export const EventListResponseSchema = Type.Object(
   {
     items: Type.Array(EventResponseSchema, { maxItems: 100 }),
-    nextCursor: Type.Union([
-      Type.String({ pattern: "^[a-f0-9]{24}$" }),
-      Type.Null(),
-    ]),
+    nextCursor: Type.Union([Type.String({ maxLength: 128 }), Type.Null()]),
   },
   { additionalProperties: false },
 );
@@ -35,9 +37,15 @@ export const EventListResponseSchema = Type.Object(
 export type EventListResponse = Static<typeof EventListResponseSchema>;
 
 /** Explicit public fields prevent storage-only data from leaking into responses. */
-export function toEventResponse(event: EventDocument): EventResponse {
+export function toEventResponse(event: ExpandedEvent): EventResponse {
   return {
     id: event._id.toHexString(),
+    ...(event.recurrence ? { recurrence: event.recurrence } : {}),
+    ...(event.originalStart
+      ? { originalStart: event.originalStart }
+      : event.exceptions
+        ? { exceptions: event.exceptions }
+        : {}),
     title: event.title,
     ...(event.description !== undefined
       ? { description: event.description }

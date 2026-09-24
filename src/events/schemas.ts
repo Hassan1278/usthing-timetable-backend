@@ -1,4 +1,5 @@
 import { type Static, Type } from "typebox";
+import { RecurrenceSchema } from "./recurrence-schema.js";
 
 /** Validates input; the event service resolves omitted timings when enabled. */
 export const EmailNotificationsSchema = Type.Union([
@@ -71,6 +72,7 @@ export const CreateEventSchema = Type.Object(
         "Allow this event to overlap other events. False rejects overlapping creates or updates.",
     }),
     schedule: ScheduleSchema,
+    recurrence: Type.Optional(RecurrenceSchema),
     emailNotifications: Type.Optional(EmailNotificationsSchema),
   },
   { additionalProperties: false },

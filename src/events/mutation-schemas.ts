@@ -1,10 +1,17 @@
 import { type Static, Type } from "typebox";
 import { CreateEventSchema } from "./schemas.js";
 
-// Nested schedule and email objects are replacements, not deep partial updates.
-export const PatchEventSchema = Type.Partial(CreateEventSchema, {
-  minProperties: 1,
-});
+// Nested schedule, recurrence and email objects are replacements, not deep partial updates.
+export const PatchEventSchema = Type.Object(
+  {
+    ...Type.Partial(CreateEventSchema).properties,
+    recurrence: Type.Optional(
+      Type.Union([CreateEventSchema.properties.recurrence, Type.Null()]),
+    ),
+    clearExceptions: Type.Optional(Type.Literal(true)),
+  },
+  { minProperties: 1, additionalProperties: false },
+);
 export type PatchEventInput = Static<typeof PatchEventSchema>;
 
 export const MutationHeadersSchema = Type.Object({

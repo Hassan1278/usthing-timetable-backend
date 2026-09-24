@@ -138,10 +138,10 @@ test("unfiltered listing includes all dates but only the owner's non-recurring e
     recurring,
     document(bobId),
   ]);
-  // Seed a future-format series to prove the explicit recurrence exclusion.
+  // Seed a series to verify unfiltered listing still excludes recurring parents.
   await app.collections.events.updateOne(
     { _id: recurring._id },
-    { $set: { recurrence: { frequency: "weekly" } } },
+    { $set: { recurrence: { frequency: "weekly", endsOn: "2027-10-05" } } },
   );
   const body = await getList();
   assert.deepStrictEqual(

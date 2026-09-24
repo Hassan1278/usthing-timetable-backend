@@ -2,9 +2,10 @@
 
 The project now implements custom-event CRUD, multi-user ownership, validation,
 reminder settings, paginated calendar reads, revision-protected mutations,
-request rate limits, ICS export, and backend overlap rejection for non-recurring events.
+request rate limits, ICS export, daily/weekly recurrence, individual exceptions,
+and backend overlap rejection across complete finite series.
 The API and MongoDB are containerized and verified together. Task 2 remains
-unstarted, and the larger calendar features remain planned.
+unstarted. Email delivery and template cleanup remain outstanding.
 
 ## How a request works
 
@@ -35,16 +36,21 @@ validation enforce actual request values. Types do not install database validato
 | [src/plugins/sensible.ts](../src/plugins/sensible.ts) | Registers standard HTTP error helpers and their shared schema. |
 | [src/rate-limits.ts](../src/rate-limits.ts) | Applies IP checks before auth and read/write checks after auth, returning 429 and retry headers when exhausted. |
 | [src/rate-limit-store.ts](../src/rate-limit-store.ts) | Bounded, fixed-window in-memory counters. Independent snapshots prevent simultaneous requests from changing each other's observed counts. |
+| [src/events/calendar-read.ts](../src/events/calendar-read.ts) | Bounded live pagination of normal events and effective recurring occurrences. |
+| [src/events/series.ts](../src/events/series.ts) | Shared schedule conversion, finite expansion, exception application and aggregate budgets. |
+| [src/events/exception-schema.ts](../src/events/exception-schema.ts), [src/events/exception-service.ts](../src/events/exception-service.ts), [src/events/exception-routes.ts](../src/events/exception-routes.ts) | Strict authenticated occurrence edits, cancellations and restoration using parent revisions and atomic embedded exceptions. |
+| [src/events/occurrences.ts](../src/events/occurrences.ts) | Runtime-validated full-series and ranged generation with a 367-occurrence series cap. |
+| [src/events/recurrence-schema.ts](../src/events/recurrence-schema.ts), [src/events/recurrence.ts](../src/events/recurrence.ts) | Optional daily/weekly recurrence contract and HK end-date resolution, persisted once when a rule is saved. |
 | [src/events/ics.ts](../src/events/ics.ts) | Bounded, owned ICS export with UTC instants, date-only all-day events, stable UIDs and safe text serialization via ical.js. |
 | [src/events/schemas.ts](../src/events/schemas.ts) | Runtime create-input contract: fields, lengths, event kinds, timed/all-day schedules, allowConflicts and email settings. Rejects extra fields, including client timezone and ownership. Also derives TypeScript input types. |
 | [src/events/query-schemas.ts](../src/events/query-schemas.ts) | Validates event IDs, date-range query values and cursor pagination parameters. |
 | [src/events/mutation-schemas.ts](../src/events/mutation-schemas.ts) | Derives a nonempty partial PATCH body and validates the supported If-Match header shape. Nested objects remain whole replacements. |
 | [src/events/validation.ts](../src/events/validation.ts) | Rejects equal or reversed intervals after structural validation. Past events are allowed. |
 | [src/events/defaults.ts](../src/events/defaults.ts) | Resolves email settings. Appointments default to reminders 1440 and 120 minutes before; other types default to off. Explicit choices override defaults. |
-| [src/events/model.ts](../src/events/model.ts) | Describes stored documents: ObjectId, owner, details, resolved settings, calendar UID, revision and timestamps. Timed values use Date; all-day values use date strings. |
+| [src/events/model.ts](../src/events/model.ts) | Describes stored documents: ObjectId, owner, details, resolved settings, calendar UID, revision and timestamps. Timed values use Date; all-day values use date strings. Recurrence ends are resolved and exceptions are embedded. |
 | [src/events/service.ts](../src/events/service.ts) | Creates and retrieves owned events. Implements bounded, cursor-paginated listing and optional Hong Kong range filtering. Calls conflict checking inside the owner's write lock before inserting. |
 | [src/events/mutations.ts](../src/events/mutations.ts) | Merges PATCH input with stored state, validates the whole candidate, preserves omitted settings and checks overlaps. Updates/deletes use atomic owner-and-revision predicates. |
-| [src/events/conflicts.ts](../src/events/conflicts.ts) | Checks timed/timed, all-day/all-day and mixed overlaps within the same owner's calendar. Uses exclusive ends and excludes the edited event itself. Raises EventConflictError before any conflicting save. |
+| [src/events/conflicts.ts](../src/events/conflicts.ts) | Checks all effective finite occurrences, including self-overlap, mixed schedules and exceptions. Bounded scans fail closed; the current parent is excluded when editing. |
 | [src/events/write-lock.ts](../src/events/write-lock.ts) | Serializes check-and-write operations per owner in one process. Releases on success or failure and removes idle entries; different owners operate independently. |
 | [src/events/response.ts](../src/events/response.ts) | Defines public response schemas and explicitly maps storage into JSON, omitting internal ownership and renaming _id to id. |
 | [src/routes/health/index.ts](../src/routes/health/index.ts) | Returns readiness based on a bounded MongoDB ping, with generic failure responses. |
@@ -61,6 +67,9 @@ interfere with each other. Dedicated rate tests use small budgets.
 
 | Test file | Behavior verified |
 | --- | --- |
+| [test/routes/events-recurrence.test.ts](../test/routes/events-recurrence.test.ts) | End-to-end recurrence, full-series conflicts, exceptions, pagination, concurrency, security limits and ICS equivalence. |
+| [test/events/occurrences.test.ts](../test/events/occurrences.test.ts) | Range boundaries, invalid inputs, bounded work, stable original starts and 600 comparisons against exhaustive expansion. |
+| [test/events/recurrence.test.ts](../test/events/recurrence.test.ts) | Optional rules on either schedule, strict values, inclusive date bounds, 12-month defaults, leap days and HK date conversion. |
 | [test/routes/events-export.test.ts](../test/routes/events-export.test.ts) | Download format, ownership, text escaping, HK boundaries, revision metadata, output limits and shared read limits. |
 | [test/events/schemas.test.ts](../test/events/schemas.test.ts) | Valid inputs, bad dates, bounds, protected fields, email rules and rejection of the old isOptional field. |
 | [test/events/defaults.test.ts](../test/events/defaults.test.ts) | Default reminders, explicit overrides and input/array independence. |
@@ -93,7 +102,8 @@ interfere with each other. Dedicated rate tests use small budgets.
 | [docs/container-verification.md](container-verification.md) | Records actual Docker startup, CRUD, ownership and volume-persistence verification with repeatable manual steps. |
 | [compose.yaml](../compose.yaml) | Runs one API and MongoDB with health checks, local ports and a persistent database volume. |
 | [README.md](../README.md) | Startup commands, endpoint examples, errors, concurrency/rate behavior and current limitations. |
-| [docs/event-model.md](event-model.md) | Explains data representations, domain rules and ICS export and planned recurrence/email behavior. Planned sections are not implemented features. |
+| [docs/recurrence.md](recurrence.md) | Recurrence API examples, exception semantics, resource limits and export behavior. |
+| [docs/event-model.md](event-model.md) | Explains data representations, domain rules and ICS export, recurrence and planned email behavior. Planned sections are not implemented features. |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Template development conventions and required checks. |
 | [docs/status-review.md](status-review.md) | This dated review; update after major milestones rather than treating it as a live feature list. |
 
@@ -115,30 +125,34 @@ interfere with each other. Dedicated rate tests use small budgets.
   or an explicit migration with a chosen allowConflicts value. No live database
   migration was run, and TypeScript types do not enforce stored document shape.
 - ICS export, conflict rejection and rate limiting are implemented extras.
-  Recurrence and email delivery are not implemented; ICS import is out of scope.
+  Recurrence, full-series conflicts, calendar reads, whole-series mutations,
+  individual cancellation/edit/restore and recurring ICS export are implemented.
+  Email delivery is not implemented; ICS import is out of scope.
   MCP is an optional alternative, not required alongside every other extra.
 - API and MongoDB containerization is complete. Actual Docker build, readiness,
   CRUD and persistence after container recreation are verified. This is a local
   test deployment; process-local locks and counters still require one API instance.
 - Remove leftover template example routes/collection/tests and update package
   branding before submission. Finish documentation against actual implemented
-  scope; do not advertise planned recurrence or email delivery as complete.
+  scope; do not advertise email delivery as complete.
 - Task 2's PR review remains separate and unstarted; its patch must be supplied.
 
 Next implementation order: finish template cleanup and documentation, complete
-Task 2, and verify submission instructions. Recurrence and email delivery can
+Task 2, and verify submission instructions. Email delivery can
 remain future work; ICS export fulfills a suggested calendar extra. Deadline from the
 brief: 26 September 2026, 23:59 HKT.
 
 ## Verification and commit
 
-At this review, all 260 tests pass. Type checking and Biome checks are run before
-handoff. Tests include concurrency behavior but are not a production load test.
+At this review, all 371 tests pass, along with TypeScript and Biome checks.
+The production Docker image was built and smoke-tested for recurrence creation,
+range reads, cancellation, restart persistence, owner isolation, ICS export,
+restoration and whole-series deletion. Tests include concurrency behavior but are not a production load test.
 The local sandbox has a WSL mount startup problem; checks ran outside it with
 approval. No commit was made by the assistant for this milestone.
 
 Suggested commit message:
 
 ```text
-feat: add authenticated ICS calendar export
+feat: support recurring calendars and occurrence exceptions
 ```

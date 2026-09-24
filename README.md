@@ -99,12 +99,13 @@ headers return `400`. Rejected requests do not create an event.
 Appointments default to email reminders 24 hours and 2 hours before; other
 event types default to email disabled. Explicit `emailNotifications` settings
 override these defaults. This endpoint only stores settings; it does not send
-email. Basic event CRUD is implemented; recurrence and reminder delivery are
-still pending.
+email. Event CRUD and daily/weekly recurrence are implemented; email delivery
+remains unimplemented. See [recurrence behavior and API examples](docs/recurrence.md)
+for finite series, calendar occurrences, cancellation, overrides and restoration.
 
 ### Exporting an ICS calendar
 
-Download the authenticated user's non-recurring events:
+Download the authenticated user's events and recurring series:
 
 ```sh
 curl --fail 'http://localhost:3000/events/export.ics' \
@@ -115,8 +116,8 @@ curl --fail 'http://localhost:3000/events/export.ics' \
 Add `?from=2026-10-05&to=2026-10-12` to export a calendar week. The same
 paired Hong Kong dates and 1–93 day range rules apply as for JSON listing.
 Without dates, the export includes events across all dates. There is no
-`limit`/`after` pagination: up to 1000 events are returned, or `413` asks for a
-smaller date range. Nothing is silently truncated. Authentication and the shared
+`limit`/`after` pagination: up to 1000 parent documents are scanned. Recurrence
+processing and output budgets also apply; `413` reports an oversized selection. Nothing is silently truncated. Authentication and the shared
 read rate limit apply; other users' events are never included.
 
 The response is `text/calendar; charset=utf-8`, with an attachment filename and
@@ -130,8 +131,9 @@ round outwards to whole seconds for export. The timetable remains
 Hong Kong-based; a receiving app can display timed instants in its own timezone.
 Text is escaped, long lines are folded, line endings normalized, and invalid
 control characters omitted. Account identifiers, tokens, app-specific settings
-and notification instructions are excluded. ICS import and recurrence are not
-implemented; export does not send emails.
+and notification instructions are excluded. Recurring series use finite RRULEs, EXDATE cancellations and RECURRENCE-ID
+overrides. Date filters select complete series, not clipped rules. ICS import
+is not implemented; export does not send emails.
 
 ### Reading events
 
@@ -140,19 +142,19 @@ All GET endpoints require the same bearer token:
 | Request | Result |
 | --- | --- |
 | `GET /events` | The user's non-recurring events across all dates, paginated |
-| `GET /events?from=2026-10-05&to=2026-10-12` | Non-recurring events overlapping that Hong Kong calendar week |
+| `GET /events?from=2026-10-05&to=2026-10-12` | Normal events and recurring occurrences overlapping that Hong Kong calendar week |
 | `GET /events/:id` | One owned event, using the `id` returned by creation |
 
 `from` and `to` must either both be supplied or both omitted. They are date-only
 values interpreted at Hong Kong midnight. `to` is exclusive; the range must be
 1–93 days. Events crossing a boundary are included, but an event ending exactly
-at `from` or starting exactly at `to` is excluded. Recurring series and occurrence
-expansion are not supported yet; list queries exclude documents with recurrence.
+at `from` or starting exactly at `to` is excluded. Ranged queries expand recurrence and apply exceptions. Without a date range,
+listing continues to exclude recurring parents. GET by ID returns the parent.
 
 Lists return `{ "items": [...], "nextCursor": "..." }`. The default page size
 is 50; set `limit` to an integer from 1 to 100. Pass `nextCursor` as `after` with
 the same range filters to request the next page. A null cursor means no further
-page. Results are ordered by ascending event ID, not scheduled time; the UI can
+page. Results are ordered by parent ID and original occurrence start, not scheduled time; the UI can
 arrange them on its calendar. Pages are live reads, not a frozen snapshot.
 
 ```sh

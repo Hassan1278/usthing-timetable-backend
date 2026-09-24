@@ -3,6 +3,7 @@ import { type TSchema, Type } from "typebox";
 import { Compile } from "typebox/compile";
 import type { FastifyTypebox } from "../../app.js";
 import { EventConflictError } from "../../events/conflicts.js";
+import { registerExceptionRoutes } from "../../events/exception-routes.js";
 import { CalendarExportLimitError, exportCalendar } from "../../events/ics.js";
 import {
   MutationHeadersSchema,
@@ -45,15 +46,18 @@ const events: FastifyPluginAsync = async (fastify: FastifyTypebox) => {
         response: {
           ...(route.schema?.response as Record<string, unknown>),
           429: HttpError,
+          413: HttpError,
         },
       };
     });
+    registerExceptionRoutes(scope, strictValidatorCompiler);
     scope.get(
       "/export.ics",
       {
         validatorCompiler: strictValidatorCompiler,
         schema: {
-          summary: "Download your non-recurring events as an ICS calendar",
+          summary:
+            "Download your events and recurring series as an ICS calendar",
           description:
             "Exports up to 1000 events. Optional from/to dates select a Hong Kong range of at most 93 days. Returns 413 instead of truncating an oversized export. App-specific settings and reminders are not included.",
           tags: ["Events"],
@@ -100,9 +104,9 @@ const events: FastifyPluginAsync = async (fastify: FastifyTypebox) => {
       {
         validatorCompiler: strictValidatorCompiler,
         schema: {
-          summary: "List your non-recurring events",
+          summary: "List events or calendar occurrences",
           description:
-            "Optional from/to dates bound a Hong Kong calendar range of at most 93 days. Pages are ordered by ID; limit defaults to 50 (maximum 100). Pass nextCursor as after with the same filters.",
+            "Without dates, lists non-recurring events. Paired from/to dates return events and recurring occurrences in a Hong Kong range of at most 93 days. Occurrences include originalStart; ID/revision identify the parent. Pages are ordered by ID; limit defaults to 50 (maximum 100). Pass nextCursor as after with the same filters.",
           tags: ["Events"],
           security: [{ Auth: [] }],
           querystring: ListEventsQuerySchema,
@@ -165,7 +169,7 @@ const events: FastifyPluginAsync = async (fastify: FastifyTypebox) => {
         schema: {
           summary: "Create a custom timetable event",
           description:
-            "Creates an event in the fixed Asia/Hong_Kong timetable.",
+            "Creates an event in the fixed Asia/Hong_Kong timetable. Daily/weekly recurrence defaults to an inclusive end 12 calendar months after the first start.",
           tags: ["Events"],
           security: [{ Auth: [] }],
           body: CreateEventSchema,
@@ -205,7 +209,7 @@ const events: FastifyPluginAsync = async (fastify: FastifyTypebox) => {
         schema: {
           summary: "Update one of your events",
           description:
-            'Requires If-Match with the current quoted revision, for example "1". Supplied nested objects replace previous settings; omitted fields stay unchanged.',
+            'Requires If-Match with the current quoted revision, for example "1". Supplied nested objects replace previous settings; omitted fields stay unchanged. Use recurrence: null to remove repetition. Schedule/rule edits with exceptions require clearExceptions: true.',
           tags: ["Events"],
           security: [{ Auth: [] }],
           params: EventIdParamsSchema,
