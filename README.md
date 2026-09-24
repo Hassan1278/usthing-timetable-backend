@@ -210,5 +210,4 @@ Before public deployment, replace sample authentication, configure HTTPS and
 trusted proxies, and verify capacity under realistic load.
 
 ICS import, email delivery, infinite recurrence and “this and following” series
-splitting are outside the implemented scope. MCP is not implemented; recurrence
-and ICS export provide the additional features for this technical test.
+splitting are outside the implemented scope. But would be planned for future development
