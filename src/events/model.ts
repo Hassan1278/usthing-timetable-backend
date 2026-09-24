@@ -15,7 +15,7 @@ export type EventDocument = Omit<EventWithDefaults, "schedule"> & {
   /** Immutable account ID taken from the authenticated identity. */
   ownerId: string;
   schedule: StoredSchedule;
-  /** Stable calendar identity for future ICS import/export. */
+  /** Stable calendar identity preserved across ICS exports and event edits. */
   uid: string;
   /** Starts at 1; updates check and increment it atomically. */
   revision: number;

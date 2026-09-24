@@ -102,6 +102,37 @@ override these defaults. This endpoint only stores settings; it does not send
 email. Basic event CRUD is implemented; recurrence and reminder delivery are
 still pending.
 
+### Exporting an ICS calendar
+
+Download the authenticated user's non-recurring events:
+
+```sh
+curl --fail 'http://localhost:3000/events/export.ics' \
+  -H 'Authorization: Bearer alice-dev-token' \
+  -o usthing-events.ics
+```
+
+Add `?from=2026-10-05&to=2026-10-12` to export a calendar week. The same
+paired Hong Kong dates and 1–93 day range rules apply as for JSON listing.
+Without dates, the export includes events across all dates. There is no
+`limit`/`after` pagination: up to 1000 events are returned, or `413` asks for a
+smaller date range. Nothing is silently truncated. Authentication and the shared
+read rate limit apply; other users' events are never included.
+
+The response is `text/calendar; charset=utf-8`, with an attachment filename and
+`Cache-Control: private, no-store`. Open the file in a calendar application.
+This is a downloaded snapshot, not a calendar subscription or two-way sync.
+
+`ical.js` serializes standard iCalendar fields: stable UID, title, description,
+location, start/end, update timestamp and sequence number. Timed events use UTC
+instants; all-day events use dates with an exclusive end. Fractional seconds
+round outwards to whole seconds for export. The timetable remains
+Hong Kong-based; a receiving app can display timed instants in its own timezone.
+Text is escaped, long lines are folded, line endings normalized, and invalid
+control characters omitted. Account identifiers, tokens, app-specific settings
+and notification instructions are excluded. ICS import and recurrence are not
+implemented; export does not send emails.
+
 ### Reading events
 
 All GET endpoints require the same bearer token:

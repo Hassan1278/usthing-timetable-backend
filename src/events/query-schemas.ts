@@ -19,3 +19,12 @@ export const ListEventsQuerySchema = Type.Object(
 );
 
 export type ListEventsQuery = Static<typeof ListEventsQuerySchema>;
+
+/** Export has no pagination: it returns the whole selection or a size error. */
+export const ExportEventsQuerySchema = Type.Pick(
+  ListEventsQuerySchema,
+  ["from", "to"],
+  {
+    additionalProperties: false,
+  },
+);

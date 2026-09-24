@@ -57,6 +57,28 @@ export async function listEvents(
   query: ListEventsQuery,
   ownerId: string,
 ): Promise<{ events: EventDocument[]; nextCursor: string | null }> {
+  const filter = buildEventFilter(query, ownerId);
+
+  const limit = Number(query.limit ?? "50");
+  const documents = await collection
+    .find(filter)
+    .sort({ _id: 1 })
+    .limit(limit + 1)
+    .toArray();
+  const events = documents.slice(0, limit);
+  const last = events.at(-1);
+  return {
+    events,
+    nextCursor:
+      documents.length > limit && last ? last._id.toHexString() : null,
+  };
+}
+
+/** Shared owner and HK-range predicates for JSON listing and ICS export. */
+export function buildEventFilter(
+  query: ListEventsQuery,
+  ownerId: string,
+): Filter<EventDocument> {
   const { from, to, after } = query;
   if ((from === undefined) !== (to === undefined)) {
     throw new EventValidationError("from and to must be supplied together.");
@@ -92,17 +114,5 @@ export async function listEvents(
     ];
   }
 
-  const limit = Number(query.limit ?? "50");
-  const documents = await collection
-    .find(filter)
-    .sort({ _id: 1 })
-    .limit(limit + 1)
-    .toArray();
-  const events = documents.slice(0, limit);
-  const last = events.at(-1);
-  return {
-    events,
-    nextCursor:
-      documents.length > limit && last ? last._id.toHexString() : null,
-  };
+  return filter;
 }

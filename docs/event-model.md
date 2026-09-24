@@ -59,6 +59,29 @@ does not create a snapshot, and IDs determine page order rather than event time.
 `src/events/query-schemas.ts` rejects unknown query fields and malformed values;
 the service validates paired range dates and duration before querying MongoDB.
 
+## ICS export
+
+`GET /events/export.ics` uses the same authenticated owner and optional paired
+Hong Kong range filters as JSON listing. It returns a complete selection up to
+1000 non-recurring events; larger selections return 413 with no partial file.
+It rejects pagination and timezone parameters. An empty selection produces a
+valid calendar without VEVENT entries. The shared authenticated read budget applies.
+
+`src/events/ics.ts` queries at most 1001 documents and uses `ical.js` to serialize
+RFC 5545 calendar data. UID is stable across downloads and edits; SEQUENCE is
+revision minus one. DTSTAMP and LAST-MODIFIED use updatedAt. Timed DTSTART/DTEND
+are UTC, and all-day values use VALUE=DATE with an exclusive end. Fractional seconds
+round outwards (start down, end up), because iCalendar has second precision;
+this prevents a sub-second event from becoming a zero-length interval. User text is
+escaped, CRLF/bare CR are normalized to LF, and invalid controls are omitted.
+The download excludes owner IDs, tokens, app-specific settings and alarms.
+
+This is a snapshot export, not synchronization or import. The endpoint sends
+`text/calendar`, an attachment filename and `private, no-store` cache policy.
+See the [README](../README.md#exporting-an-ics-calendar) for usage, the
+[ical.js API](https://kewisch.github.io/ical.js/api/ICAL.Component.html) for the
+serializer, and [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545) for the format.
+
 ## Event fields
 
 | Field | Meaning | Controlled by |
@@ -74,7 +97,7 @@ the service validates paired range dates and duration before querying MongoDB.
 | `recurrence` | Optional rule describing repeated occurrences | User |
 | `exceptions` | Cancelled or modified occurrences of a series | Dedicated authenticated operations |
 | `emailNotifications` | Whether email is enabled and when reminders are due | User; server resolves defaults |
-| `uid` | Stable calendar identity used for ICS import/export | Server or validated import |
+| `uid` | Stable calendar identity used for ICS export | Server |
 | `revision` | Integer used to detect stale edits, starting at 1 | Server |
 | `createdAt` | Creation timestamp | Server |
 | `updatedAt` | Most recent modification timestamp | Server |
@@ -84,8 +107,7 @@ and deletion must be restricted to that owner. A valid token alone does not
 grant access to another user's events.
 
 Create requests must not set `_id`, `id`, `ownerId`, `uid`, `revision`,
-`createdAt`, `updatedAt`, or `exceptions`. The import endpoint handles imported
-UIDs and exceptions through a separate validation path.
+`createdAt`, `updatedAt`, or `exceptions`. There is no ICS import endpoint.
 
 ## Schedule
 
@@ -109,10 +131,8 @@ instant: `2026-10-05T02:00:00Z` is 10:00 in Hong Kong. Accepting that timestamp
 does not change the timetable timezone.
 
 Store the first start/end instants as BSON dates. Recurring occurrences follow
-Hong Kong calendar time. ICS import must interpret source timezone information
-before converting instants. Source recurrence affected by daylight saving must
-preserve the actual occurrence times or be explicitly rejected as unsupported;
-it must not silently become a different Hong Kong recurrence.
+Hong Kong calendar time. ICS export represents stored timed instants in UTC;
+this does not change the timetable timezone. Import is outside the current scope.
 
 ### All-day event
 
@@ -327,7 +347,8 @@ serialize competing calendar writes.
 
 Base CRUD, input validation, defaults, storage types, indexes and tests are
 implemented. Basic backend conflict rejection is also implemented. Remaining
-milestones include recurrence, ICS import/export and reminder delivery. API
+milestones include recurrence and reminder delivery. ICS export is implemented;
+ICS import is outside the current scope. API
 container setup is implemented and verified; results are recorded in
 [container verification](container-verification.md). Each milestone includes tests and documentation updates.
 

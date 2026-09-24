@@ -48,6 +48,7 @@ const app: FastifyPluginAsync<AppOptions> = async (
     origin: "*",
     exposedHeaders: [
       "ETag",
+      "Content-Disposition",
       "Retry-After",
       "X-RateLimit-Scope",
       "X-RateLimit-Limit",

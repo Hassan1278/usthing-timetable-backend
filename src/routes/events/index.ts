@@ -1,8 +1,9 @@
 import type { FastifyPluginAsync, FastifySchemaCompiler } from "fastify";
-import type { TSchema } from "typebox";
+import { type TSchema, Type } from "typebox";
 import { Compile } from "typebox/compile";
 import type { FastifyTypebox } from "../../app.js";
 import { EventConflictError } from "../../events/conflicts.js";
+import { CalendarExportLimitError, exportCalendar } from "../../events/ics.js";
 import {
   MutationHeadersSchema,
   PatchEventSchema,
@@ -14,6 +15,7 @@ import {
 } from "../../events/mutations.js";
 import {
   EventIdParamsSchema,
+  ExportEventsQuerySchema,
   ListEventsQuerySchema,
 } from "../../events/query-schemas.js";
 import {
@@ -46,6 +48,53 @@ const events: FastifyPluginAsync = async (fastify: FastifyTypebox) => {
         },
       };
     });
+    scope.get(
+      "/export.ics",
+      {
+        validatorCompiler: strictValidatorCompiler,
+        schema: {
+          summary: "Download your non-recurring events as an ICS calendar",
+          description:
+            "Exports up to 1000 events. Optional from/to dates select a Hong Kong range of at most 93 days. Returns 413 instead of truncating an oversized export. App-specific settings and reminders are not included.",
+          tags: ["Events"],
+          security: [{ Auth: [] }],
+          querystring: ExportEventsQuerySchema,
+          response: {
+            200: {
+              description: "iCalendar download",
+              content: { "text/calendar": { schema: Type.String() } },
+            },
+            400: HttpError,
+            413: HttpError,
+          },
+        },
+      },
+      async (request, reply) => {
+        reply.header("Cache-Control", "private, no-store");
+        try {
+          const calendar = await exportCalendar(
+            scope.collections.events,
+            request.query,
+            request.user.id,
+          );
+          return reply
+            .type("text/calendar; charset=utf-8")
+            .header(
+              "Content-Disposition",
+              'attachment; filename="usthing-events.ics"',
+            )
+            .header("X-Content-Type-Options", "nosniff")
+            .send(calendar);
+        } catch (error) {
+          if (error instanceof EventValidationError)
+            return reply.badRequest(error.message);
+          if (error instanceof CalendarExportLimitError)
+            return reply.payloadTooLarge(error.message);
+          throw error;
+        }
+      },
+    );
+
     scope.get(
       "/",
       {

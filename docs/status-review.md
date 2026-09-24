@@ -2,7 +2,7 @@
 
 The project now implements custom-event CRUD, multi-user ownership, validation,
 reminder settings, paginated calendar reads, revision-protected mutations,
-request rate limits, and backend overlap rejection for non-recurring events.
+request rate limits, ICS export, and backend overlap rejection for non-recurring events.
 The API and MongoDB are containerized and verified together. Task 2 remains
 unstarted, and the larger calendar features remain planned.
 
@@ -35,6 +35,7 @@ validation enforce actual request values. Types do not install database validato
 | [src/plugins/sensible.ts](../src/plugins/sensible.ts) | Registers standard HTTP error helpers and their shared schema. |
 | [src/rate-limits.ts](../src/rate-limits.ts) | Applies IP checks before auth and read/write checks after auth, returning 429 and retry headers when exhausted. |
 | [src/rate-limit-store.ts](../src/rate-limit-store.ts) | Bounded, fixed-window in-memory counters. Independent snapshots prevent simultaneous requests from changing each other's observed counts. |
+| [src/events/ics.ts](../src/events/ics.ts) | Bounded, owned ICS export with UTC instants, date-only all-day events, stable UIDs and safe text serialization via ical.js. |
 | [src/events/schemas.ts](../src/events/schemas.ts) | Runtime create-input contract: fields, lengths, event kinds, timed/all-day schedules, allowConflicts and email settings. Rejects extra fields, including client timezone and ownership. Also derives TypeScript input types. |
 | [src/events/query-schemas.ts](../src/events/query-schemas.ts) | Validates event IDs, date-range query values and cursor pagination parameters. |
 | [src/events/mutation-schemas.ts](../src/events/mutation-schemas.ts) | Derives a nonempty partial PATCH body and validates the supported If-Match header shape. Nested objects remain whole replacements. |
@@ -60,6 +61,7 @@ interfere with each other. Dedicated rate tests use small budgets.
 
 | Test file | Behavior verified |
 | --- | --- |
+| [test/routes/events-export.test.ts](../test/routes/events-export.test.ts) | Download format, ownership, text escaping, HK boundaries, revision metadata, output limits and shared read limits. |
 | [test/events/schemas.test.ts](../test/events/schemas.test.ts) | Valid inputs, bad dates, bounds, protected fields, email rules and rejection of the old isOptional field. |
 | [test/events/defaults.test.ts](../test/events/defaults.test.ts) | Default reminders, explicit overrides and input/array independence. |
 | [test/events/validation.test.ts](../test/events/validation.test.ts) | Interval ordering, equivalent offsets, all-day boundaries and unchanged input. |
@@ -91,7 +93,7 @@ interfere with each other. Dedicated rate tests use small budgets.
 | [docs/container-verification.md](container-verification.md) | Records actual Docker startup, CRUD, ownership and volume-persistence verification with repeatable manual steps. |
 | [compose.yaml](../compose.yaml) | Runs one API and MongoDB with health checks, local ports and a persistent database volume. |
 | [README.md](../README.md) | Startup commands, endpoint examples, errors, concurrency/rate behavior and current limitations. |
-| [docs/event-model.md](event-model.md) | Explains data representations, domain rules and planned recurrence/import/email behavior. Planned sections are not implemented features. |
+| [docs/event-model.md](event-model.md) | Explains data representations, domain rules and ICS export and planned recurrence/email behavior. Planned sections are not implemented features. |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Template development conventions and required checks. |
 | [docs/status-review.md](status-review.md) | This dated review; update after major milestones rather than treating it as a live feature list. |
 
@@ -112,8 +114,8 @@ interfere with each other. Dedicated rate tests use small budgets.
 - The field rename is a breaking contract change. Old records need recreation
   or an explicit migration with a chosen allowConflicts value. No live database
   migration was run, and TypeScript types do not enforce stored document shape.
-- Conflict rejection and rate limiting are implemented extra behavior. The
-  planned recurrence, ICS import/export and email delivery are not implemented.
+- ICS export, conflict rejection and rate limiting are implemented extras.
+  Recurrence and email delivery are not implemented; ICS import is out of scope.
   MCP is an optional alternative, not required alongside every other extra.
 - API and MongoDB containerization is complete. Actual Docker build, readiness,
   CRUD and persistence after container recreation are verified. This is a local
@@ -123,14 +125,14 @@ interfere with each other. Dedicated rate tests use small budgets.
   scope; do not advertise planned recurrence or email delivery as complete.
 - Task 2's PR review remains separate and unstarted; its patch must be supplied.
 
-Next implementation order: implement the chosen calendar
-extra (recurrence and/or ICS export), follow with remaining promised features as
-scope allows, and complete Task 2 and submission instructions. Deadline from the
+Next implementation order: finish template cleanup and documentation, complete
+Task 2, and verify submission instructions. Recurrence and email delivery can
+remain future work; ICS export fulfills a suggested calendar extra. Deadline from the
 brief: 26 September 2026, 23:59 HKT.
 
 ## Verification and commit
 
-At this review, all 240 tests pass. Type checking and Biome checks are run before
+At this review, all 260 tests pass. Type checking and Biome checks are run before
 handoff. Tests include concurrency behavior but are not a production load test.
 The local sandbox has a WSL mount startup problem; checks ran outside it with
 approval. No commit was made by the assistant for this milestone.
@@ -138,5 +140,5 @@ approval. No commit was made by the assistant for this milestone.
 Suggested commit message:
 
 ```text
-feat: containerize API and MongoDB with readiness checks
+feat: add authenticated ICS calendar export
 ```
