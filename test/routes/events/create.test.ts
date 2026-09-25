@@ -68,7 +68,8 @@ test("POST /events stores an owned event and returns a public 201 response", asy
     endsAt: "2026-10-05T03:00:00.000Z",
   });
   assert.deepStrictEqual(body.emailNotifications, {
-    enabled: false,
+    enabled: true,
+    minutesBefore: [1440, 120],
   });
   const alice = await app.authenticate("alice-dev-token");
   const stored = await app.collections.events.findOne({
@@ -113,7 +114,7 @@ test("all-day creation preserves Hong Kong dates and defaults other types to ema
   assert.deepStrictEqual(stored?.schedule, schedule);
 });
 
-test.each([{ enabled: false }])(
+test.each([{ enabled: false }, { enabled: true, minutesBefore: [60, 0] }])(
   "creation preserves explicit notification settings %#",
   async (emailNotifications) => {
     const response = await app.inject({
@@ -260,18 +261,3 @@ test("OpenAPI documents the protected create endpoint", () => {
   assert.ok(operation.responses?.["400"]);
   assert.ok(operation.responses?.["401"]);
 });
-
-test.each([{ enabled: true }, { enabled: true, minutesBefore: [1440, 120] }])(
-  "POST rejects enabling email without writing %#",
-  async (emailNotifications) => {
-    const response = await app.inject({
-      method: "POST",
-      url: "/events",
-      headers,
-      payload: { ...validEvent, emailNotifications },
-    });
-    assert.equal(response.statusCode, 400, response.payload);
-    assert.match(response.json().message, /not available yet/);
-    assert.equal(await app.collections.events.countDocuments(), 0);
-  },
-);

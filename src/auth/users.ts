@@ -11,6 +11,8 @@ export type InternalUser = {
   username: string;
   /** The user's display name; may be null. */
   name: string | null;
+  /** Internal seed address; never included in the public authenticated identity. */
+  email: string;
   /**
    * The bearer token the user authenticates with. Tokens act as passwords:
    * replace these samples before deploying and never commit real secrets.
@@ -26,11 +28,13 @@ export const users: InternalUser[] = [
     username: "alice",
     name: "Alice",
     token: "alice-dev-token",
+    email: "alice@example.invalid",
   },
   {
     id: "1ba1e239-12d8-4b8f-8d8f-d9e04e76ca8e",
     username: "bob",
     name: "Bob",
     token: "bob-dev-token",
+    email: "bob@example.invalid",
   },
 ];

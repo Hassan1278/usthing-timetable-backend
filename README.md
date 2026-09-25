@@ -29,6 +29,11 @@ technical-test deployment with two sample accounts:
 
 These are public development credentials, not real student accounts. Each account
 can access only its own events. OAuth and user registration are not implemented.
+Startup seeds private MongoDB user profiles keyed by the same stable IDs, with
+`alice@example.invalid` and `bob@example.invalid` as mock email addresses. Tokens
+remain in the internal authentication table and are not stored in these profiles.
+Restarts preserve existing profile addresses. No API accepts or returns recipient
+email addresses, and ICS exports exclude them.
 
 ```sh
 docker compose ps             # Service health
@@ -137,9 +142,14 @@ Important rules:
   or occurrences belonging to that user. `true` permits that write to overlap;
   existing events still participate in other conflict checks. Touching endpoints
   are allowed.
-- Email delivery is disabled. Omission defaults to `{enabled: false}`;
-  `enabled: true` returns `400` on creation and all edits. Startup disables legacy
-  enabled settings, archives preferences internally and increments affected revisions.
+- Email reminder **settings** are enabled; delivery is not implemented and no
+  emails are sent. New appointments default to `{enabled: true, minutesBefore:
+  [1440, 120]}` (24 hours and 2 hours before); other event types default off.
+  Explicit settings override these defaults. Custom timings accept 1–3 unique
+  whole minutes from 0 to 10080. PATCH preserves omitted settings, even when the
+  event type changes. Existing disabled events and archived preferences are not
+  automatically re-enabled. Recipient addresses belong to private user profiles,
+  never event requests or responses.
 - ICS includes recurrence rules, cancellations and overrides. Date filters select
   whole series, not clipped rules. Export and recurrence work are bounded;
   oversized exports return `413` instead of silently truncating results.
@@ -178,7 +188,7 @@ bun run check    # Formatting and lint checks
 bun run test     # Unit and HTTP integration tests, with coverage
 ```
 
-The latest verified suite has 370 passing tests. Integration tests use Fastify
+The latest verified suite has 371 passing tests. Integration tests use Fastify
 injection and temporary real MongoDB instances to exercise persistence, ownership,
 conflicts, revisions, recurrence and failure cases. This is not a production load
 test. The Docker build installs production dependencies but does not run these checks.

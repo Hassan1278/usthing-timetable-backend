@@ -35,6 +35,7 @@ test("authentication returns a stable public identity", async () => {
     name: "Alice",
   });
   assert.ok(!("token" in firstAlice));
+  assert.ok(!("email" in firstAlice));
 });
 test("protected route rejects missing credentials", async () => {
   const app = await buildAuthApp();

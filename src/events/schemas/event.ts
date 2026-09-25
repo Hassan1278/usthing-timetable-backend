@@ -1,7 +1,7 @@
 import { type Static, Type } from "typebox";
 import { RecurrenceSchema } from "./recurrence.js";
 
-/** Future-compatible shape; business validation currently rejects enabled: true. */
+/** Saved reminder preferences; delivery is not implemented. */
 export const EmailNotificationsSchema = Type.Union([
   Type.Object(
     { enabled: Type.Literal(false) },
@@ -76,7 +76,7 @@ export const CreateEventSchema = Type.Object(
     emailNotifications: Type.Optional({
       ...EmailNotificationsSchema,
       description:
-        "Reserved for future development. Currently only enabled: false is supported; omission defaults to false.",
+        "Saved reminder preferences only; no emails are sent. Appointments default to enabled with reminders 24 hours and 2 hours before; other types default to disabled.",
     }),
   },
   { additionalProperties: false },

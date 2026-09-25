@@ -4,7 +4,6 @@ import type {
   EmailNotificationsInput,
 } from "../schemas/event.js";
 import type { ResolvedRecurrence } from "../schemas/recurrence.js";
-import { assertEmailDisabled } from "./validation.js";
 
 export type ResolvedEmailNotifications =
   | { enabled: false }
@@ -18,12 +17,20 @@ export type EventWithDefaults = Omit<
   recurrence?: ResolvedRecurrence;
 };
 
+const DEFAULT_REMINDER_MINUTES = [1440, 120] as const;
+
 /** Resolve explicit settings; callers decide what an omitted field means. */
 export function resolveEmailNotifications(
   settings: EmailNotificationsInput,
 ): ResolvedEmailNotifications {
-  assertEmailDisabled(settings);
-  return { enabled: false };
+  return settings.enabled
+    ? {
+        enabled: true,
+        minutesBefore: [
+          ...(settings.minutesBefore ?? DEFAULT_REMINDER_MINUTES),
+        ],
+      }
+    : { enabled: false };
 }
 
 /**
@@ -34,7 +41,7 @@ export function applyCreateEventDefaults(
   input: CreateEventInput,
 ): EventWithDefaults {
   const settings: EmailNotificationsInput = input.emailNotifications ?? {
-    enabled: false,
+    enabled: input.eventType === "appointment",
   };
 
   const { recurrence, ...fields } = input;

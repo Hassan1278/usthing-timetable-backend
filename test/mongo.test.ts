@@ -26,7 +26,7 @@ test("the app reports ready with the collections decorated", async () => {
   await app.ready();
 
   assert.ok(app.collections.events);
-  assert.deepStrictEqual(Object.keys(app.collections), ["events"]);
+  assert.deepStrictEqual(Object.keys(app.collections), ["events", "users"]);
   assert.equal(app.mongo.db?.databaseName, "template-api");
   for (const url of ["/example", "/example/error", "/auth-example"]) {
     assert.equal((await app.inject({ url })).statusCode, 404);

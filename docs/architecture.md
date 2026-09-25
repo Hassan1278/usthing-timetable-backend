@@ -11,7 +11,7 @@ and keeps calendar rules in one place.
 src/
   app.ts                 Application assembly, plugins and route loading
   options.ts             Environment configuration
-  auth/                  Sample identities and stable user IDs
+  auth/                  Sample identities and private user-profile storage
   plugins/               Authentication, MongoDB setup and HTTP error helpers
   rate-limits.ts         Request limits before and after authentication
   rate-limit-store.ts    Bounded in-process counters
@@ -45,7 +45,7 @@ so adding a helper file does not accidentally register an endpoint.
 2. The authenticated user consumes a write allowance. TypeBox schemas validate
    actual request values and reject unknown fields, including ownership and timezone.
 3. The service applies defaults or merges an edit with the stored event. Business
-   validation checks the complete result, including schedule ordering and disabled email.
+   validation checks the complete result, including schedule ordering and reminder preferences.
 4. A per-owner lock serializes conflict checking and saving. Full finite series
    are expanded with their exceptions before comparing intervals.
 5. MongoDB stores the document. Updates/deletes match both ownership and revision;
@@ -115,12 +115,17 @@ establish capacity for thousands of simultaneous users.
 Docker packages Bun and frozen production dependencies into a non-root runtime.
 Compose starts MongoDB first, waits for health and stores data in a named volume.
 The API's readiness endpoint pings MongoDB. Container replacement preserves data;
-removing the volume does not. No email worker or message broker is needed because
-email delivery is disabled.
+removing the volume does not. Reminder preferences can be saved, but no worker or email transport is implemented.
+No emails are sent.
 
-At startup, an idempotent migration disables legacy enabled notification settings,
-archives their preferences internally and increments affected revisions. This
-retains future options without promising a delivery feature that does not exist.
+Startup seeds private `users` documents from the internal identity table, using
+the stable account UUID as `_id`. Each profile stores username, name and a mock
+email address; tokens are excluded. `$setOnInsert` preserves saved addresses on
+restart. Profiles have no public endpoint and their emails are neither accepted
+in event input nor exposed in authentication responses, event JSON or ICS.
+The future recipient can be resolved through `event.ownerId` without copying
+an address into every event. Previously disabled settings and archived
+preferences remain unchanged; the disabling startup migration has been removed.
 
 ## Verification and reading order
 

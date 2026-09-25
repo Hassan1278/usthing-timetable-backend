@@ -6,8 +6,9 @@ import type { Collection } from "mongodb";
 // Keep the established database name independent of package branding.
 const DEFAULT_DATABASE_NAME = "template-api";
 
+import { seedUserProfiles, type UserDocument } from "../auth/user-store.js";
+import { users as defaultUsers, type InternalUser } from "../auth/users.js";
 import type { EventDocument } from "../events/domain/model.js";
-import { disableLegacyEmailNotifications } from "../events/services/disable-email.js";
 
 /**
  * Options for {@link resolveMongoUri} and {@link mongoPlugin}.
@@ -152,6 +153,8 @@ export const mongoPlugin = fp<MongoPluginOptions>(async (fastify, opts) => {
 });
 
 export type InitMongoPluginOptions = {
+  /** Profiles share the same identities as the configured authentication table. */
+  users?: InternalUser[];
   // MongoDB URI (Optional; non-test, from MONGO_URI; forwarded to mongoPlugin
   // which resolves the URI and registers @fastify/mongodb)
   mongoUri: string | undefined;
@@ -203,8 +206,9 @@ export default fp<InitMongoPluginOptions>(async (fastify, opts) => {
         name: "events_owner_all_day_start",
       },
     ]);
-    await disableLegacyEmailNotifications(events);
-    fastify.decorate("collections", { events });
+    const users = db.collection<UserDocument>("users");
+    await seedUserProfiles(users, opts.users ?? defaultUsers);
+    fastify.decorate("collections", { events, users });
   });
 });
 
@@ -212,6 +216,7 @@ declare module "fastify" {
   export interface FastifyInstance {
     collections: {
       events: Collection<EventDocument>;
+      users: Collection<UserDocument>;
     };
   }
 }
