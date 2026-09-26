@@ -37,7 +37,7 @@ calculate schedules. This lets one rule serve creation, editing and occurrence
 changes without copying it into several routes. Small functions and shared
 schemas provide reuse without a generic repository or class hierarchy.
 
-Only `src/routes` is autoloaded. Helpers in `events/http` are explicitly imported,
+`src/plugins` and `src/routes` are autoloaded. Helpers in `events/http` are explicitly imported,
 so adding a helper file does not accidentally register an endpoint.
 
 ## How a write reaches MongoDB
@@ -89,8 +89,9 @@ them in Hong Kong time.
 A recurring event stores one daily/weekly rule, a finite end and embedded
 exceptions, rather than a document per occurrence. Generation is bounded to at
 most 12 calendar months and 367 starts per series. This keeps edits compact and
-makes complete conflict checks possible. Range reads expand only the requested
-view; the 93-day view limit does not shorten the conflict-checking horizon.
+makes complete conflict checks possible. Range reads expand candidate series and
+apply exceptions before filtering to the requested view, so moved occurrences are
+included correctly. The 93-day view limit does not shorten the conflict-checking horizon.
 
 Exceptions use the occurrence's original start as identity, even after it moves.
 Cancellations remove intervals and overrides replace them. Changing the parent
@@ -152,6 +153,13 @@ events hourly and retries planning failures after a minute. A revision predicate
 prevents acknowledging a newer edit that arrived during planning. This avoids
 losing a reminder between saving an event and saving its jobs, without requiring
 a transaction spanning both collections.
+
+The planner is shared across users; its batch limit can delay scheduling under
+load. Additional workers can process delivery jobs, but the singleton planner
+remains a throughput limit. The current hourly refresh also revisits events with
+no remaining reminders. Higher-scale work would include draining pending batches,
+skipping inactive events, precise next-planning times and load tests measuring
+backlog and delivery lateness. These improvements are not implemented.
 
 Jobs identify the owner, event, original occurrence, effective start and reminder
 offset. A unique index prevents duplicate scheduling across retries and restarts;

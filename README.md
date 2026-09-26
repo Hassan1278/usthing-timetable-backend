@@ -2,7 +2,8 @@
 
 Backend for user-owned custom timetable events, built with Fastify, TypeScript,
 Bun and MongoDB. It supports CRUD, daily/weekly recurrence, individual occurrence
-exceptions, conflict checking, iCalendar (`.ics`) export and optional email reminders.
+exceptions, event colors, conflict checking, iCalendar (`.ics`) export and optional
+email reminders.
 There is no frontend.
 
 ## Quick start
@@ -209,6 +210,12 @@ It checks for scheduling work every five seconds, processing up to 50 changed or
 due events per pass. It schedules the next 24 hours of reminders and refreshes
 unchanged events hourly. Recurrence and occurrence exceptions use the same
 calendar rules as the API; all-day reminders count back from Hong Kong midnight.
+
+The planner is shared across users, not one timer per user. Its 50-event batches
+can create a backlog during bursts; adding delivery workers does not increase the
+singleton planner's capacity. This deployment has not been load-tested for 10,000
+users. Higher volume requires planner throughput improvements and measurements
+of backlog, reminder lateness and SMTP-provider limits.
 
 Before sending, the worker rechecks the current event, preferences and private
 user email. Deleted, cancelled, disabled or rescheduled reminders are skipped.
