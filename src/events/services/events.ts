@@ -37,6 +37,7 @@ export async function createEvent(
     ownerId,
     uid: randomUUID(),
     revision: 1,
+    remindersPending: true,
     createdAt: now,
     updatedAt: now,
   };

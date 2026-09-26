@@ -1,6 +1,6 @@
 # Architecture
 
-The service is a single Fastify application backed by MongoDB. It manages custom
+The service has a Fastify API backed by MongoDB and an optional reminder worker. It manages custom
 events for authenticated users; a frontend can render the JSON responses as a
 calendar. Keeping one deployable API and one database makes the test easy to run
 and keeps calendar rules in one place.
@@ -18,6 +18,7 @@ src/
   routes/
     events/              Main HTTP endpoint registration
     health/              Database readiness endpoint
+  reminders/             Durable scheduling, SMTP delivery and worker entry point
   events/
     schemas/             Runtime request contracts and derived TypeScript types
     domain/              Stored document types, defaults and business validation
@@ -27,6 +28,7 @@ src/
 test/
   events/                Schema, domain, storage and recurrence checks
   routes/                HTTP behavior and authorization checks
+  reminders/             Planning rules and MongoDB/SMTP integration checks
 ```
 
 Files are grouped by the event feature, then by responsibility. HTTP handlers
@@ -115,17 +117,55 @@ establish capacity for thousands of simultaneous users.
 Docker packages Bun and frozen production dependencies into a non-root runtime.
 Compose starts MongoDB first, waits for health and stores data in a named volume.
 The API's readiness endpoint pings MongoDB. Container replacement preserves data;
-removing the volume does not. Reminder preferences can be saved, but no worker or email transport is implemented.
-No emails are sent.
+removing the volume does not. An optional Compose profile adds the reminder
+worker and a persistent Mailpit inbox. Mailpit captures local test messages;
+normal API startup does not start email delivery.
 
 Startup seeds private `users` documents from the internal identity table, using
 the stable account UUID as `_id`. Each profile stores username, name and a mock
 email address; tokens are excluded. `$setOnInsert` preserves saved addresses on
 restart. Profiles have no public endpoint and their emails are neither accepted
 in event input nor exposed in authentication responses, event JSON or ICS.
-The future recipient can be resolved through `event.ownerId` without copying
-an address into every event. Previously disabled settings and archived
+The worker resolves the current recipient through `event.ownerId` without copying
+an address into every event or job. Previously disabled settings and archived
 preferences remain unchanged; the disabling startup migration has been removed.
+
+## Reminder delivery
+
+Agenda provides persistent delayed jobs and MongoDB-backed worker locks; Nodemailer
+provides SMTP delivery. Reusing MongoDB avoids adding Redis solely for reminders.
+The worker runs separately so email failures do not delay HTTP requests. Agenda
+polls for due work; scheduling is durable rather than an application timer that
+loses its state on restart.
+
+Event creation and edits atomically save an internal `remindersPending` marker
+alongside the event. A singleton planning job processes up to 50 eligible events
+every five seconds, scheduling a rolling 24-hour horizon. It refreshes unchanged
+events hourly and retries planning failures after a minute. A revision predicate
+prevents acknowledging a newer edit that arrived during planning. This avoids
+losing a reminder between saving an event and saving its jobs, without requiring
+a transaction spanning both collections.
+
+Jobs identify the owner, event, original occurrence, effective start and reminder
+offset. A unique index prevents duplicate scheduling across retries and restarts;
+changing text does not generate a second reminder. Seven-day TTL retention keeps
+completed identities long enough to prevent repeated delivery during catch-up.
+Every delivery re-reads the effective occurrence and private user profile, so
+cancelled or outdated jobs can remain queued safely until they are skipped.
+Queue data contains neither recipient addresses nor event text.
+
+Temporary SMTP errors receive three bounded retries. Errors stored in the queue
+are sanitized; a ten-minute lateness policy avoids sending obsolete reminders
+after long outages. MongoDB locks coordinate multiple reminder workers, although
+the API still supports only one process. Worker health checks shared planner
+progress, and shutdown drains active work before closing connections.
+
+SMTP acceptance and saving the result cannot be atomic: a crash between them can
+produce a duplicate. Stable Message-ID values help identify repeats but do not
+guarantee recipient-side deduplication. Edits after the final validation may race
+with an in-flight send. These limits are explicit rather than claiming exactly-once
+delivery. Real-provider credentials, verified recipient identities and production
+monitoring are outside the local test deployment.
 
 ## Verification and reading order
 

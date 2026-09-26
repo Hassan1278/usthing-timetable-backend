@@ -2,7 +2,8 @@
 
 Backend for user-owned custom timetable events, built with Fastify, TypeScript,
 Bun and MongoDB. It supports CRUD, daily/weekly recurrence, individual occurrence
-exceptions, conflict checking and iCalendar (`.ics`) export. There is no frontend.
+exceptions, conflict checking, iCalendar (`.ics`) export and optional email reminders.
+There is no frontend.
 
 ## Quick start
 
@@ -142,8 +143,7 @@ Important rules:
   or occurrences belonging to that user. `true` permits that write to overlap;
   existing events still participate in other conflict checks. Touching endpoints
   are allowed.
-- Email reminder **settings** are enabled; delivery is not implemented and no
-  emails are sent. New appointments default to `{enabled: true, minutesBefore:
+- New appointments default to email reminders `{enabled: true, minutesBefore:
   [1440, 120]}` (24 hours and 2 hours before); other event types default off.
   Explicit settings override these defaults. Custom timings accept 1–3 unique
   whole minutes from 0 to 10080. PATCH preserves omitted settings, even when the
@@ -165,6 +165,65 @@ Important rules:
 | `429` | Rate limit: wait for `Retry-After` |
 
 The running OpenAPI documentation describes endpoint-specific responses.
+
+## Try email reminders locally
+
+Delivery is off in the default stack. Enable the optional worker and Mailpit inbox:
+
+```sh
+docker compose --profile reminders up --build -d --wait
+```
+
+Open [Mailpit](http://localhost:8025). It captures SMTP messages locally; this
+configuration does not deliver to real inboxes. Set `MAILPIT_PORT` if 8025 is busy.
+The SMTP port is accessible only inside the Compose network.
+
+Create an appointment through Swagger UI or `POST /events`, choosing a start two
+minutes in the future and these settings:
+
+```json
+"emailNotifications": { "enabled": true, "minutesBefore": [1] }
+```
+
+Expect a message to the owner's mock address about one minute before the event.
+Dates must be in the future for this test; the fixed example above is not a live
+reminder test. Timings are best effort, not exact to the second.
+
+```sh
+docker compose logs -f reminders
+docker compose stop reminders       # Pause delivery; preserve jobs
+# Resume with the profile startup command above.
+```
+
+The separate worker uses [Agenda](https://github.com/agenda/agenda) to persist and
+lock jobs in MongoDB, and [Nodemailer](https://nodemailer.com/smtp) to send SMTP.
+It checks for scheduling work every five seconds, processing up to 50 changed or
+due events per pass. It schedules the next 24 hours of reminders and refreshes
+unchanged events hourly. Recurrence and occurrence exceptions use the same
+calendar rules as the API; all-day reminders count back from Hong Kong midnight.
+
+Before sending, the worker rechecks the current event, preferences and private
+user email. Deleted, cancelled, disabled or rescheduled reminders are skipped.
+Temporary SMTP failures get three retries after 5, 10 and 20 seconds; permanent
+rejections are not retried. A ten-minute grace period permits brief outages,
+but advance reminders are never sent after the event starts. Zero-minute
+reminders may arrive within that grace period. Reminders due before event
+creation are not backfilled. Expired reminders are skipped, and job records
+expire seven days after their due time.
+
+Unique job keys prevent duplicate scheduling. SMTP cannot guarantee exactly-once
+delivery: a crash after the mail server accepts a message but before its outcome
+is saved can cause a duplicate. A cancellation after the final check cannot recall
+an email already being sent. Completed or skipped jobs are not replayed.
+
+To use a real provider later, configure the worker's `SMTP_HOST`, `SMTP_PORT`,
+`SMTP_SECURE`, `SMTP_FROM` and optional paired `SMTP_USER`/`SMTP_PASSWORD`, then
+replace mock profile addresses with verified account emails. Provider credentials
+belong in deployment secrets. The supplied Compose profile intentionally fixes
+SMTP to Mailpit. Standalone workers require `EMAIL_DELIVERY_ENABLED=true` and
+`MONGO_URI`; run them with `bun run worker` after starting the API once to seed
+profiles. Production sender verification, monitoring and provider setup remain
+separate deployment work.
 
 ## Development and checks
 
@@ -188,9 +247,11 @@ bun run check    # Formatting and lint checks
 bun run test     # Unit and HTTP integration tests, with coverage
 ```
 
-The latest verified suite has 371 passing tests. Integration tests use Fastify
+The latest verified suite has 386 passing tests. Integration tests use Fastify
 injection and temporary real MongoDB instances to exercise persistence, ownership,
-conflicts, revisions, recurrence and failure cases. This is not a production load
+conflicts, revisions, recurrence and failure cases. Reminder tests use a local SMTP
+server to check delivery, retries, restarts, competing workers and changed events.
+This is not a production load
 test. The Docker build installs production dependencies but does not run these checks.
 
 | Configuration | Default / purpose |
@@ -219,5 +280,5 @@ replicas require shared counters and database-coordinated conflict protection.
 Before public deployment, replace sample authentication, configure HTTPS and
 trusted proxies, and verify capacity under realistic load.
 
-ICS import, email delivery, infinite recurrence and “this and following” series
-splitting are outside the implemented scope. But would be planned for future development
+ICS import, production email-provider setup, infinite recurrence and “this and
+following” series splitting are outside the implemented scope.

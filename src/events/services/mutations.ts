@@ -71,6 +71,7 @@ export async function updateEvent(
           schedule: next.schedule,
           ...(next.exceptions?.length ? { exceptions: next.exceptions } : {}),
           updatedAt: next.updatedAt,
+          remindersPending: true,
         },
         $unset: {
           ...(!normalized.recurrence ? { recurrence: "" as const } : {}),

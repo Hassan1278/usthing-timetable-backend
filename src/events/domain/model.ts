@@ -18,6 +18,9 @@ export type EventDocument = Omit<
   "schedule" | "recurrence"
 > & {
   _id: ObjectId;
+  /** Durable planning marker, saved atomically with event changes; never public. */
+  remindersPending?: boolean;
+  remindersNextPlanAt?: Date;
   recurrence?: ResolvedRecurrence;
   exceptions?: EventException[];
   /** Archived by the email-disable migration; internal-only future preferences. */

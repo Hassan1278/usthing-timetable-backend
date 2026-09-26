@@ -1,7 +1,7 @@
 import { type Static, Type } from "typebox";
 import { RecurrenceSchema } from "./recurrence.js";
 
-/** Saved reminder preferences; delivery is not implemented. */
+/** Reminder preferences used by the optional delivery worker. */
 export const EmailNotificationsSchema = Type.Union([
   Type.Object(
     { enabled: Type.Literal(false) },
@@ -76,7 +76,7 @@ export const CreateEventSchema = Type.Object(
     emailNotifications: Type.Optional({
       ...EmailNotificationsSchema,
       description:
-        "Saved reminder preferences only; no emails are sent. Appointments default to enabled with reminders 24 hours and 2 hours before; other types default to disabled.",
+        "Delivery requires the optional reminder worker. Appointments default to enabled with reminders 24 hours and 2 hours before; other types default to disabled.",
     }),
   },
   { additionalProperties: false },

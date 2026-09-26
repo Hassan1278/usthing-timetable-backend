@@ -63,7 +63,7 @@ export async function changeOccurrence(
     const updated = await collection.findOneAndUpdate(
       { _id: current._id, ownerId, revision },
       {
-        $set: { exceptions, updatedAt: next.updatedAt },
+        $set: { exceptions, updatedAt: next.updatedAt, remindersPending: true },
         $inc: { revision: 1 },
       },
       { returnDocument: "after" },

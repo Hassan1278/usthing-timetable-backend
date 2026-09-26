@@ -25,6 +25,45 @@ services:
     restart: unless-stopped
     stop_grace_period: 15s
 
+  reminders:
+    image: usthing-api:local
+    profiles: ["reminders"]
+    init: true
+    command: ["bun", "src/reminders/worker.ts"]
+    environment:
+      NODE_ENV: production
+      EMAIL_DELIVERY_ENABLED: "true"
+      MONGO_URI: mongodb://mongodb:27017/template-api
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_SECURE: "false"
+      SMTP_FROM: reminders@usthing.invalid
+    depends_on:
+      api:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    restart: unless-stopped
+    stop_grace_period: 45s
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const r = await fetch('http://127.0.0.1:3001'); process.exit(r.ok ? 0 : 1)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  mailpit:
+    image: axllent/mailpit:v1.31.2
+    profiles: ["reminders"]
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: "500"
+    ports:
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+    volumes:
+      - mailpit_data:/data
+    restart: unless-stopped
+
   mongodb:
     image: mongo:8.3.4
     ports:
@@ -41,3 +80,4 @@ services:
 
 volumes:
   mongo_data:
+  mailpit_data:

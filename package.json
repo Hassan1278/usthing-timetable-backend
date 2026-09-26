@@ -15,7 +15,8 @@
     "compile": "tsc && tsc -p test/tsconfig.json",
     "check": "biome ci .",
     "lint": "biome lint --write .",
-    "fmt": "biome format --write ."
+    "fmt": "biome format --write .",
+    "worker": "bun src/reminders/worker.ts"
   },
   "engines": {
     "bun": ">=1.4.2"
@@ -24,6 +25,7 @@
   "author": "USThing Team",
   "license": "MIT",
   "dependencies": {
+    "@agendajs/mongo-backend": "4.0.3",
     "@fastify/autoload": "^6.5.0",
     "@fastify/cors": "^11.3.0",
     "@fastify/mongodb": "^10.0.1",
@@ -32,18 +34,23 @@
     "@fastify/swagger": "^9.8.1",
     "@fastify/swagger-ui": "^6.1.1",
     "@scalar/fastify-api-reference": "^1.68.0",
+    "agenda": "6.2.6",
     "fastify": "^5.12.4",
     "fastify-cli": "^8.0.2",
     "fastify-plugin": "^6.0.0",
     "ical.js": "2.2.1",
     "mongodb": "^7.6.0",
+    "nodemailer": "10.0.10",
     "typebox": "^1.3.31"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.13",
     "@fastify/type-provider-typebox": "^6.1.0",
     "@types/bun": "^1.4.2",
+    "@types/nodemailer": "8.0.2",
+    "@types/smtp-server": "3.5.13",
     "mongodb-memory-server": "^11.2.0",
+    "smtp-server": "3.19.13",
     "typescript": "7.0.2"
   }
 }
