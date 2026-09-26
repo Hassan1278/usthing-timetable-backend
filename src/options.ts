@@ -79,7 +79,9 @@ export const getBooleanOption = function getBooleanOption(
   const normalized = val.trim().toLowerCase();
   if (["1", "true", "yes", "y"].includes(normalized)) return true;
   if (["0", "false", "no", "n"].includes(normalized)) return false;
-  return undefined;
+  throw new Error(
+    `${args.envName} must be a boolean (true/false, yes/no, y/n or 1/0).`,
+  );
 } as GetBooleanOption;
 
 export function lazyOptions<T extends object>(loadOptions: () => T): T {
@@ -136,6 +138,10 @@ function positiveIntegerOption(env: Env, name: string): number | undefined {
 }
 
 export function loadOptions(env: Env = Bun.env): AppOptions {
+  if (env.AUTH !== undefined)
+    throw new Error(
+      "Unknown AUTH setting; use AUTH_SKIP=true or AUTH_SKIP=false.",
+    );
   const options: AppOptions = {
     // Launching lots of services on the server,
     // especially at the same time by something such as docker compose up,
@@ -144,6 +150,16 @@ export function loadOptions(env: Env = Bun.env): AppOptions {
     pluginTimeout: 5 * 60 * 1000,
 
     test: false,
+    logger: {
+      redact: [
+        "req.headers.authorization",
+        "req.headers.cookie",
+        'req.headers["proxy-authorization"]',
+        'res.headers["set-cookie"]',
+        "headers.authorization",
+        "headers.cookie",
+      ],
+    },
     // Blank values count as unset: people blank a variable in .env to
     // "remove" it, and the in-memory fallback should kick in rather than
     // crash startup.

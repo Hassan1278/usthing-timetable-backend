@@ -2,6 +2,7 @@ import { type Collection, ObjectId } from "mongodb";
 import { Compile } from "typebox/compile";
 import { applyCreateEventDefaults } from "../domain/defaults.js";
 import type { EventDocument } from "../domain/model.js";
+import { reminderScheduleChanged } from "../domain/reminders.js";
 import { EventValidationError, validateEvent } from "../domain/validation.js";
 import {
   eventInput,
@@ -31,8 +32,8 @@ export async function updateEvent(
   expectedRevision: number,
   patch: PatchEventInput,
 ): Promise<EventDocument | null> {
-  return withEventWriteLock(collection, ownerId, async () => {
-    const current = await getEvent(collection, id, ownerId);
+  return withEventWriteLock(collection, ownerId, async (session) => {
+    const current = await getEvent(collection, id, ownerId, session);
     if (!current) return null;
     if (current.revision !== expectedRevision) throw new EventRevisionError();
 
@@ -61,7 +62,7 @@ export async function updateEvent(
     };
     if (!normalized.recurrence) delete next.recurrence;
     expandEvent(next);
-    await assertNoEventConflict(collection, next, current._id);
+    await assertNoEventConflict(collection, next, current._id, session);
 
     const updated = await collection.findOneAndUpdate(
       { _id: current._id, ownerId, revision: expectedRevision },
@@ -71,7 +72,9 @@ export async function updateEvent(
           schedule: next.schedule,
           ...(next.exceptions?.length ? { exceptions: next.exceptions } : {}),
           updatedAt: next.updatedAt,
-          remindersPending: true,
+          ...(reminderScheduleChanged(current, next)
+            ? { remindersPending: true }
+            : {}),
         },
         $unset: {
           ...(!normalized.recurrence ? { recurrence: "" as const } : {}),
@@ -79,7 +82,7 @@ export async function updateEvent(
         },
         $inc: { revision: 1 },
       },
-      { returnDocument: "after" },
+      { returnDocument: "after", session },
     );
     // The atomic predicate also detects edits/deletion after our initial read.
     if (!updated) throw new EventRevisionError();
@@ -94,14 +97,18 @@ export async function deleteEvent(
   ownerId: string,
   expectedRevision: number,
 ): Promise<boolean> {
-  return withEventWriteLock(collection, ownerId, async () => {
-    const result = await collection.deleteOne({
-      _id: new ObjectId(id),
-      ownerId,
-      revision: expectedRevision,
-    });
+  return withEventWriteLock(collection, ownerId, async (session) => {
+    const result = await collection.deleteOne(
+      {
+        _id: new ObjectId(id),
+        ownerId,
+        revision: expectedRevision,
+      },
+      { session },
+    );
     if (result.deletedCount === 1) return true;
-    if (await getEvent(collection, id, ownerId)) throw new EventRevisionError();
+    if (await getEvent(collection, id, ownerId, session))
+      throw new EventRevisionError();
     return false;
   });
 }

@@ -1,6 +1,7 @@
 import type { Collection } from "mongodb";
 import { Compile } from "typebox/compile";
 import type { EventDocument } from "../domain/model.js";
+import { reminderScheduleChanged } from "../domain/reminders.js";
 import { EventValidationError } from "../domain/validation.js";
 import { baseOccurrences, expandEvent } from "../recurrence/series.js";
 import { OccurrencePatchSchema } from "../schemas/exception.js";
@@ -19,8 +20,8 @@ export async function changeOccurrence(
   action: "edit" | "cancel" | "restore",
   patch?: unknown,
 ): Promise<EventDocument | null> {
-  return withEventWriteLock(collection, ownerId, async () => {
-    const current = await getEvent(collection, id, ownerId);
+  return withEventWriteLock(collection, ownerId, async (session) => {
+    const current = await getEvent(collection, id, ownerId, session);
     if (!current) return null;
     if (current.revision !== revision) throw new EventRevisionError();
     if (!current.recurrence)
@@ -59,14 +60,20 @@ export async function changeOccurrence(
     expandEvent(next);
     // Cancellation can only remove intervals. Restore/edit can introduce overlaps.
     if (action !== "cancel")
-      await assertNoEventConflict(collection, next, current._id);
+      await assertNoEventConflict(collection, next, current._id, session);
     const updated = await collection.findOneAndUpdate(
       { _id: current._id, ownerId, revision },
       {
-        $set: { exceptions, updatedAt: next.updatedAt, remindersPending: true },
+        $set: {
+          exceptions,
+          updatedAt: next.updatedAt,
+          ...(reminderScheduleChanged(current, next)
+            ? { remindersPending: true }
+            : {}),
+        },
         $inc: { revision: 1 },
       },
-      { returnDocument: "after" },
+      { returnDocument: "after", session },
     );
     if (!updated) throw new EventRevisionError();
     return updated;

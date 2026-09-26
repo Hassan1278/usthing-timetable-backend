@@ -1,4 +1,4 @@
-# One API process: overlap locks and rate counters are currently process-local.
+# Shared MongoDB transactions and counters coordinate API processes.
 # Start: docker compose up --build -d --wait
 # Stop without removing data: docker compose down
 # docker compose down -v also removes the database volume and all its data.
@@ -11,7 +11,7 @@ services:
     init: true
     environment:
       NODE_ENV: production
-      MONGO_URI: mongodb://mongodb:27017/template-api
+      MONGO_URI: mongodb://mongodb:27017/template-api?replicaSet=rs0
       AUTH_SKIP: "false"
       RATE_LIMIT_IP_MAX: ${RATE_LIMIT_IP_MAX:-120}
       RATE_LIMIT_READ_MAX: ${RATE_LIMIT_READ_MAX:-120}
@@ -33,7 +33,7 @@ services:
     environment:
       NODE_ENV: production
       EMAIL_DELIVERY_ENABLED: "true"
-      MONGO_URI: mongodb://mongodb:27017/template-api
+      MONGO_URI: mongodb://mongodb:27017/template-api?replicaSet=rs0
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
       SMTP_SECURE: "false"
@@ -66,12 +66,13 @@ services:
 
   mongodb:
     image: mongo:8.3.4
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     ports:
       - "127.0.0.1:${MONGO_HOST_PORT:-27018}:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status(); } catch (e) { if (e.code === 94) rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]}); else throw e; } if (!db.hello().isWritablePrimary) quit(1);"]
       interval: 5s
       timeout: 5s
       retries: 5

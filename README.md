@@ -20,7 +20,8 @@ Expected response: `{"status":"ok"}`. Open [Swagger UI](http://localhost:3000/do
 for interactive API documentation or [Scalar](http://localhost:3000/reference)
 for an alternative view.
 
-The API runs at `http://localhost:3000`. MongoDB uses a persistent named volume.
+The API runs at `http://localhost:3000`. MongoDB uses a persistent named volume
+and a single-node replica set for transactions. This is not database redundancy.
 Compose enables authentication and binds host ports to localhost. This is a local
 technical-test deployment with two sample accounts:
 
@@ -207,7 +208,8 @@ docker compose stop reminders       # Pause delivery; preserve jobs
 The separate worker uses [Agenda](https://github.com/agenda/agenda) to persist and
 lock jobs in MongoDB, and [Nodemailer](https://nodemailer.com/smtp) to send SMTP.
 It checks for scheduling work every five seconds, processing up to 50 changed or
-due events per pass. It schedules the next 24 hours of reminders and refreshes
+due events per pass. Text and color edits preserve existing planning state;
+schedule, recurrence and reminder changes mark an event for replanning. It schedules the next 24 hours of reminders and refreshes
 unchanged events hourly. Recurrence and occurrence exceptions use the same
 calendar rules as the API; all-day reminders count back from Hong Kong midnight.
 
@@ -250,10 +252,10 @@ bun run dev
 ```
 
 Without a database URI in non-production mode, the app starts a temporary real
-MongoDB server using `mongodb-memory-server`. Its first use may download a MongoDB
+MongoDB replica set using `mongodb-memory-server`. Its first use may download a MongoDB
 binary; this database is disposable. For persistent local development, start
 `docker compose up -d mongodb` and set
-`MONGO_URI=mongodb://localhost:27018/template-api` in `.env`. See `.env.example`.
+`MONGO_URI=mongodb://localhost:27018/template-api?replicaSet=rs0&directConnection=true` in `.env`. See `.env.example`.
 Do not start both the local API and the container API on the same host port.
 
 ```sh
@@ -262,7 +264,8 @@ bun run check    # Formatting and lint checks
 bun run test     # Unit and HTTP integration tests, with coverage
 ```
 
-The latest verified suite has 404 passing tests. Integration tests use Fastify
+The test suite includes concurrent writes and shared rate budgets across independent
+API instances, more than 5000 live rate counters, configuration errors and log redaction. Integration tests use Fastify
 injection and temporary real MongoDB instances to exercise persistence, ownership,
 conflicts, revisions, recurrence and failure cases. Reminder tests use a local SMTP
 server to check delivery, retries, restarts, competing workers and changed events.
@@ -283,17 +286,32 @@ Compose explicitly supplies its internal MongoDB URI and disables auth bypass.
 The legacy database name `template-api` is retained to preserve existing data.
 Rate settings must be positive integers. IP checks precede authentication; reads
 and writes then consume separate user budgets. Writes share one budget across
-methods, including occurrence restoration. Counters reset on API restart.
+methods, including occurrence restoration. Counters are atomic MongoDB records,
+survive API restarts and expire through TTL cleanup. Active counters are not evicted;
+database failures return `503` rather than bypassing limits. All replicas must use
+the same limit configuration. `AUTH_SKIP` rejects malformed boolean values at
+startup; `AUTH` is rejected as an unsupported alias. Logs redact authorization and
+cookie headers, including at debug level.
 
 ## Architecture and scope
 
 Read [architecture](docs/architecture.md) for the folder structure, request flow
 and design tradeoffs.
 
-Run **one API process**: write locks and rate counters are process-local. Multiple
-replicas require shared counters and database-coordinated conflict protection.
-Before public deployment, replace sample authentication, configure HTTPS and
-trusted proxies, and verify capacity under realistic load.
+API processes sharing one database coordinate event writes through MongoDB
+transactions and a per-owner coordination document. A standalone MongoDB server
+is rejected at startup; use a replica set or supported sharded deployment. Compose
+initializes a single-node replica set while preserving its existing data volume.
+The supplied Compose file exposes one API instance; multiple instances require
+appropriate ports or a load balancer. Before public deployment, replace sample
+authentication, configure HTTPS and trusted proxies, add database availability
+and backups, and verify capacity under realistic load.
+
+GitHub Actions runs `verify` (frozen install, coverage tests, source/test type
+checks and Biome) and `docker` (image build) on pushes and pull requests. Make
+both checks required in branch protection before allowing merges; the workflow
+alone does not prevent an administrator from bypassing checks. No deployment or
+image publication is configured.
 
 ICS import, production email-provider setup, infinite recurrence and “this and
 following” series splitting are outside the implemented scope.

@@ -9,6 +9,7 @@ const DEFAULT_DATABASE_NAME = "template-api";
 import { seedUserProfiles, type UserDocument } from "../auth/user-store.js";
 import { users as defaultUsers, type InternalUser } from "../auth/users.js";
 import type { EventDocument } from "../events/domain/model.js";
+import { registerEventTransactions } from "../events/services/write-lock.js";
 
 /**
  * Options for {@link resolveMongoUri} and {@link mongoPlugin}.
@@ -118,8 +119,8 @@ export async function resolveMongoUri(
     return withDefaultMongoDatabase(PRODUCTION_DEFAULT_URI, databaseName);
   }
 
-  const { MongoMemoryServer } = await import("mongodb-memory-server");
-  const mongod = await MongoMemoryServer.create();
+  const { MongoMemoryReplSet } = await import("mongodb-memory-server");
+  const mongod = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   fastify.addHook("onClose", async () => {
     await mongod.stop();
   });
@@ -189,7 +190,15 @@ export default fp<InitMongoPluginOptions>(async (fastify, opts) => {
         "MongoDB database handle is unavailable; mongoPlugin did not connect. Check MONGO_URI and the MongoDB server.",
       );
     }
+    const hello = await db.admin().command({ hello: 1 });
+    if (!hello.setName && hello.msg !== "isdbgrid") {
+      throw new Error(
+        "Event writes require MongoDB transactions. Configure a replica set (see compose.yaml).",
+      );
+    }
+    await db.collection("event_write_owners").createIndex({ _id: 1 });
     const events = db.collection<EventDocument>("events");
+    registerEventTransactions(events, fastify.mongo.client);
     // The ownerId prefix also supports listing an owner's events.
     await events.createIndex(
       { ownerId: 1, uid: 1 },

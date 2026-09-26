@@ -1,33 +1,56 @@
-import type { Collection } from "mongodb";
+import type { ClientSession, Collection, MongoClient } from "mongodb";
 import type { EventDocument } from "../domain/model.js";
 
-const pendingWrites = new WeakMap<
-  Collection<EventDocument>,
-  Map<string, Promise<void>>
->();
+const clients = new WeakMap<Collection<EventDocument>, MongoClient>();
+export function registerEventTransactions(
+  collection: Collection<EventDocument>,
+  client: MongoClient,
+) {
+  clients.set(collection, client);
+}
 
-/** Serialize one owner's writes in this API process, including check-and-save. */
+/** All API replicas write the same owner record before checking event conflicts.
+ * MongoDB retries conflicting transactions with a new snapshot. The coordination
+ * write and event mutation commit together, with no expiring application lease.
+ */
 export async function withEventWriteLock<T>(
   collection: Collection<EventDocument>,
   ownerId: string,
-  operation: () => Promise<T>,
+  operation: (session: ClientSession) => Promise<T>,
 ): Promise<T> {
-  let owners = pendingWrites.get(collection);
-  if (!owners) {
-    owners = new Map();
-    pendingWrites.set(collection, owners);
-  }
-  const previous = owners.get(ownerId) ?? Promise.resolve();
-  let release!: () => void;
-  const current = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  owners.set(ownerId, current);
-  await previous;
+  const client = clients.get(collection);
+  if (!client) throw new Error("Event transaction client is not registered.");
+  const owners = client
+    .db(collection.dbName)
+    .collection<{ _id: string; revision: number }>("event_write_owners");
+  // Initialize outside the transaction: concurrent first writes may race here.
   try {
-    return await operation();
+    await owners.updateOne(
+      { _id: ownerId },
+      { $setOnInsert: { revision: 0 } },
+      { upsert: true },
+    );
+  } catch (error) {
+    if ((error as { code?: number }).code !== 11000) throw error;
+  }
+  const session = client.startSession();
+  try {
+    return await session.withTransaction(
+      async () => {
+        await owners.updateOne(
+          { _id: ownerId },
+          { $inc: { revision: 1 } },
+          { session },
+        );
+        return operation(session);
+      },
+      {
+        readConcern: { level: "snapshot" },
+        writeConcern: { w: "majority" },
+        maxCommitTimeMS: 5000,
+      },
+    );
   } finally {
-    release();
-    if (owners.get(ownerId) === current) owners.delete(ownerId);
+    await session.endSession();
   }
 }

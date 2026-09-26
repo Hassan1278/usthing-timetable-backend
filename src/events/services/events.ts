@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { type Collection, type Filter, ObjectId } from "mongodb";
+import {
+  type ClientSession,
+  type Collection,
+  type Filter,
+  ObjectId,
+} from "mongodb";
 import { applyCreateEventDefaults } from "../domain/defaults.js";
 import type { EventDocument } from "../domain/model.js";
 import { EventValidationError, validateEvent } from "../domain/validation.js";
@@ -43,9 +48,9 @@ export async function createEvent(
   };
 
   expandEvent(event);
-  return withEventWriteLock(collection, ownerId, async () => {
-    await assertNoEventConflict(collection, event);
-    await collection.insertOne(event);
+  return withEventWriteLock(collection, ownerId, async (session) => {
+    await assertNoEventConflict(collection, event, undefined, session);
+    await collection.insertOne(event, { session });
     return event;
   });
 }
@@ -55,8 +60,9 @@ export async function getEvent(
   collection: Collection<EventDocument>,
   id: string,
   ownerId: string,
+  session?: ClientSession,
 ): Promise<EventDocument | null> {
-  return collection.findOne({ _id: new ObjectId(id), ownerId });
+  return collection.findOne({ _id: new ObjectId(id), ownerId }, { session });
 }
 
 /** Query must pass ListEventsQuerySchema. Ranged reads expand finite series. */

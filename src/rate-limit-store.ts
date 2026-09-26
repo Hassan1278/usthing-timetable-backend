@@ -1,36 +1,62 @@
-import type { FastifyRateLimitStore } from "@fastify/rate-limit";
+import { createHash } from "node:crypto";
+import type { Collection } from "mongodb";
 
-/** Fixed windows with bounded LRU storage for a single API process. */
-export class RateLimitMemoryStore implements FastifyRateLimitStore {
-  private readonly entries = new Map<
-    string,
-    { count: number; expiresAt: number }
-  >();
-  private readonly capacity = 5000;
+export type RateCounter = {
+  _id: string;
+  current: number;
+  expiresAt: Date;
+  observedAt: Date;
+};
 
-  incr(
-    key: string,
-    callback: Parameters<FastifyRateLimitStore["incr"]>[1],
-    timeWindow: number,
-  ): void {
-    const now = Date.now();
-    const previous = this.entries.get(key);
-    const entry =
-      previous && previous.expiresAt > now
-        ? { count: previous.count + 1, expiresAt: previous.expiresAt }
-        : { count: 1, expiresAt: now + timeWindow };
-    this.entries.delete(key);
-    this.entries.set(key, entry);
-    if (this.entries.size > this.capacity) {
-      const oldestKey = this.entries.keys().next().value;
-      if (oldestKey !== undefined) this.entries.delete(oldestKey);
+/** Atomic fixed windows shared across replicas. TTL cleanup never evicts live keys. */
+export class RateLimitMongoStore {
+  constructor(private readonly collection: Collection<RateCounter>) {}
+
+  async consume(scope: string, key: string, timeWindow: number, max: number) {
+    const id = createHash("sha256")
+      .update(JSON.stringify([scope, key]))
+      .digest("hex");
+    const live = { $gt: [{ $ifNull: ["$expiresAt", new Date(0)] }, "$$NOW"] };
+    const update = () =>
+      this.collection.findOneAndUpdate(
+        { _id: id },
+        [
+          {
+            $set: {
+              current: {
+                $cond: [
+                  live,
+                  { $min: [{ $add: ["$current", 1] }, max + 1] },
+                  1,
+                ],
+              },
+              expiresAt: {
+                $cond: [live, "$expiresAt", { $add: ["$$NOW", timeWindow] }],
+              },
+              observedAt: "$$NOW",
+            },
+          },
+        ],
+        { upsert: true, returnDocument: "after", timeoutMS: 5000 },
+      );
+    let result: RateCounter | null;
+    try {
+      result = await update();
+    } catch (error) {
+      // Simultaneous first requests can both try to insert the unique key.
+      if ((error as { code?: number }).code !== 11000) throw error;
+      result = await update();
     }
-    // Return a fresh snapshot. The plugin awaits this result; sharing a mutable
-    // counter object would let a concurrent increment change this request's count.
-    callback(null, { current: entry.count, ttl: entry.expiresAt - now });
-  }
-
-  child(): RateLimitMemoryStore {
-    return new RateLimitMemoryStore();
+    if (!result) throw new Error("Rate counter unavailable.");
+    return {
+      allowed: result.current <= max,
+      remaining: Math.max(0, max - result.current),
+      retryAfter: Math.max(
+        1,
+        Math.ceil(
+          (result.expiresAt.getTime() - result.observedAt.getTime()) / 1000,
+        ),
+      ),
+    };
   }
 }

@@ -14,7 +14,7 @@ src/
   auth/                  Sample identities and private user-profile storage
   plugins/               Authentication, MongoDB setup and HTTP error helpers
   rate-limits.ts         Request limits before and after authentication
-  rate-limit-store.ts    Bounded in-process counters
+  rate-limit-store.ts    Atomic MongoDB counters and TTL cleanup
   routes/
     events/              Main HTTP endpoint registration
     health/              Database readiness endpoint
@@ -22,7 +22,7 @@ src/
   events/
     schemas/             Runtime request contracts and derived TypeScript types
     domain/              Stored document types, defaults and business validation
-    services/            Persistence, conflicts, mutations and per-owner locking
+    services/            Persistence, conflicts, mutations and per-owner transaction coordination
     recurrence/          Recurrence bounds, expansion and exception application
     http/                Public responses, occurrence routes and ICS serialization
 test/
@@ -48,7 +48,8 @@ so adding a helper file does not accidentally register an endpoint.
    actual request values and reject unknown fields, including ownership and timezone.
 3. The service applies defaults or merges an edit with the stored event. Business
    validation checks the complete result, including schedule ordering and reminder preferences.
-4. A per-owner lock serializes conflict checking and saving. Full finite series
+4. A transaction writes a shared per-owner coordination record before conflict
+   checking and saving. Full finite series
    are expanded with their exceptions before comparing intervals.
 5. MongoDB stores the document. Updates/deletes match both ownership and revision;
    stale mutations fail instead of overwriting a more recent change.
@@ -112,15 +113,23 @@ ICS export does not currently include them.
 
 ## Concurrency and deployment tradeoffs
 
-Rate limits bound request frequency. They do not solve races. The owner lock
-protects the check-then-save sequence across separate event documents, while
-`If-Match` revision predicates prevent stale updates to the same document.
-Different users can write independently.
+Rate limits use atomic MongoDB counter updates with database time. Scope and
+identity form a hashed key; TTL cleanup removes expired records without evicting
+live users. Replicas share the same IP, user-read and user-write budgets. IPv6
+addresses share a /56 budget. A database error fails closed with `503`; these
+application limits do not replace edge protection against volumetric traffic.
 
-Locks and counters are in memory, so the supported deployment has one API
-process. Adding replicas requires shared rate counters and database-coordinated
-writes that preserve conflict checks. Current automated concurrency tests do not
-establish capacity for thousands of simultaneous users.
+Event writes use a MongoDB transaction with snapshot reads and majority writes.
+Every mutation first updates the same per-owner coordination record. Concurrent
+transactions for that owner conflict and the driver retries them against a fresh
+snapshot, preventing cross-document double-booking across API processes.
+`If-Match` still rejects stale edits. Aborted transactions roll back their event
+writes; there is no expiring application lock that a paused process can outlive.
+
+Transactions require a replica set or supported sharded cluster, checked at
+startup. Compose and temporary test databases use single-node replica sets.
+This provides transaction support, not database redundancy. Multi-instance
+correctness tests do not establish capacity for thousands of simultaneous users.
 
 Docker packages Bun and frozen production dependencies into a non-root runtime.
 Compose starts MongoDB first, waits for health and stores data in a named volume.
@@ -146,8 +155,11 @@ The worker runs separately so email failures do not delay HTTP requests. Agenda
 polls for due work; scheduling is durable rather than an application timer that
 loses its state on restart.
 
-Event creation and edits atomically save an internal `remindersPending` marker
-alongside the event. A singleton planning job processes up to 50 eligible events
+Event creation and changes to scheduling or reminder preferences atomically save
+an internal `remindersPending` marker alongside the event. Display-only changes
+(title, description, location or color) preserve existing planning state because
+delivery re-reads those fields. Cancellations, restorations and timing overrides
+are included when detecting scheduling changes. A singleton planning job processes up to 50 eligible events
 every five seconds, scheduling a rolling 24-hour horizon. It refreshes unchanged
 events hourly and retries planning failures after a minute. A revision predicate
 prevents acknowledging a newer edit that arrived during planning. This avoids
@@ -171,8 +183,8 @@ Queue data contains neither recipient addresses nor event text.
 
 Temporary SMTP errors receive three bounded retries. Errors stored in the queue
 are sanitized; a ten-minute lateness policy avoids sending obsolete reminders
-after long outages. MongoDB locks coordinate multiple reminder workers, although
-the API still supports only one process. Worker health checks shared planner
+after long outages. MongoDB locks coordinate multiple reminder workers independently of the API
+transactions. Worker health checks shared planner
 progress, and shutdown drains active work before closing connections.
 
 SMTP acceptance and saving the result cannot be atomic: a crash between them can
@@ -191,4 +203,6 @@ following calendar expansion, and `http/response.ts` for the public result.
 Unit tests cover rules and boundary calculations. HTTP integration tests exercise
 authentication, validation, real MongoDB persistence and failures through Fastify
 injection. Docker smoke tests separately check the packaged runtime, networking,
-readiness and persistence. Run instructions are in the [README](../README.md).
+readiness and persistence. CI runs coverage tests, type checks, Biome and an image
+build on each push and pull request. Required branch checks must be enabled in
+GitHub to enforce merge gating. Run instructions are in the [README](../README.md).

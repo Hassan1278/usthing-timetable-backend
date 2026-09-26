@@ -1,4 +1,4 @@
-import type { Collection, ObjectId } from "mongodb";
+import type { ClientSession, Collection, ObjectId } from "mongodb";
 import type { EventDocument } from "../domain/model.js";
 import {
   CalendarCapacityError,
@@ -22,6 +22,7 @@ export async function assertNoEventConflict(
   collection: Collection<EventDocument>,
   candidate: EventDocument,
   excludeId?: ObjectId,
+  session?: ClientSession,
 ): Promise<void> {
   const proposed = expandEvent(candidate)
     .map((event) => interval(event.schedule))
@@ -43,23 +44,26 @@ export async function assertNoEventConflict(
     ? "9999-12-32"
     : roundedEnd.slice(0, 10);
   const cursor = collection
-    .find({
-      ownerId: candidate.ownerId,
-      ...(excludeId ? { _id: { $ne: excludeId } } : {}),
-      $or: [
-        { recurrence: { $exists: true } },
-        {
-          "schedule.kind": "timed",
-          "schedule.startsAt": { $lt: new Date(end) },
-          "schedule.endsAt": { $gt: new Date(start) },
-        },
-        {
-          "schedule.kind": "all-day",
-          "schedule.startsOn": { $lt: to },
-          "schedule.endsOn": { $gt: from },
-        },
-      ],
-    })
+    .find(
+      {
+        ownerId: candidate.ownerId,
+        ...(excludeId ? { _id: { $ne: excludeId } } : {}),
+        $or: [
+          { recurrence: { $exists: true } },
+          {
+            "schedule.kind": "timed",
+            "schedule.startsAt": { $lt: new Date(end) },
+            "schedule.endsAt": { $gt: new Date(start) },
+          },
+          {
+            "schedule.kind": "all-day",
+            "schedule.startsOn": { $lt: to },
+            "schedule.endsOn": { $gt: from },
+          },
+        ],
+      },
+      { session },
+    )
     .limit(MAX_SCANNED_EVENTS + 1)
     .maxTimeMS(5000)
     .batchSize(10);

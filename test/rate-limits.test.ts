@@ -3,11 +3,16 @@ import * as assert from "node:assert";
 import Fastify from "fastify";
 import { users } from "../src/auth/users.js";
 import Auth from "../src/plugins/auth.js";
+import { mongoPlugin } from "../src/plugins/init-mongo.js";
 import RateLimits, { type RateLimitOptions } from "../src/rate-limits.js";
 
 async function build(options: RateLimitOptions = {}) {
   const app = Fastify();
   onTestFinished(() => app.close());
+  await app.register(mongoPlugin, {
+    databaseName: "rate-limit-tests",
+    test: true,
+  });
   await app.register(RateLimits, options);
   const alice = users.find((user) => user.username === "alice");
   assert.ok(alice);

@@ -1,8 +1,8 @@
-import rateLimit from "@fastify/rate-limit";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyReply } from "fastify";
 import fp from "fastify-plugin";
+import ipaddr from "ipaddr.js";
 import type { AuthUser } from "./plugins/auth.js";
-import { RateLimitMemoryStore } from "./rate-limit-store.js";
+import { type RateCounter, RateLimitMongoStore } from "./rate-limit-store.js";
 
 export interface RateLimitOptions {
   rateLimitIpMax?: number;
@@ -11,30 +11,16 @@ export interface RateLimitOptions {
   rateLimitWindowMs?: number;
 }
 
-type Limiter = ReturnType<FastifyInstance["createRateLimit"]>;
-
-async function enforceLimit(
-  limiter: Limiter,
-  scope: "ip" | "user-read" | "user-write",
-  request: FastifyRequest,
-  reply: FastifyReply,
-): Promise<void> {
-  const result = await limiter(request);
-  if (result.isAllowed) return;
-  reply.header("X-RateLimit-Scope", scope);
-  reply.header("X-RateLimit-Limit", result.max);
-  reply.header("X-RateLimit-Remaining", result.remaining);
-  reply.header("X-RateLimit-Reset", result.ttlInSeconds);
-  if (result.isExceeded) {
-    reply.header("Retry-After", result.ttlInSeconds);
-    throw Object.assign(
-      new Error("Too many requests. Retry after the indicated delay."),
-      { statusCode: 429 },
-    );
-  }
+function ipKey(address: string): string {
+  const parsed = ipaddr.process(address);
+  if (parsed.kind() === "ipv4") return parsed.toString();
+  // Group IPv6 addresses by /56, preserving the previous limiter's subnet policy.
+  const bytes = parsed.toByteArray();
+  bytes.fill(0, 7);
+  return `${ipaddr.fromByteArray(bytes).toNormalizedString()}/56`;
 }
 
-/** In-memory counters for one API process; register before application routes. */
+/** Shared MongoDB counters; failures reject requests rather than bypassing limits. */
 export default fp<RateLimitOptions>(
   async (app, options) => {
     const ipMax = options.rateLimitIpMax ?? 120;
@@ -43,48 +29,58 @@ export default fp<RateLimitOptions>(
     const timeWindow = options.rateLimitWindowMs ?? 60_000;
     if (
       ![ipMax, readMax, writeMax, timeWindow].every(
-        (value) => Number.isSafeInteger(value) && value > 0,
+        (value) =>
+          Number.isSafeInteger(value) &&
+          value > 0 &&
+          value < Number.MAX_SAFE_INTEGER,
       )
     ) {
       throw new Error(
-        "Rate limits and their window must be positive safe integers.",
+        "Rate limits and their window must be positive safe integers below Number.MAX_SAFE_INTEGER.",
       );
     }
-    await app.register(rateLimit, {
-      global: false,
-      timeWindow,
-      skipOnError: false,
-      store: RateLimitMemoryStore,
+    let store: RateLimitMongoStore;
+    app.addHook("onReady", async () => {
+      const collection = app.mongo.db!.collection<RateCounter>("rate_limits");
+      await collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+      store = new RateLimitMongoStore(collection);
     });
-    // Separate limiter instances have separate stores. Each instance is shared
-    // across routes rather than allocating a fresh allowance for each endpoint.
-    const ipLimiter = app.createRateLimit({ max: ipMax });
-    const userKey = (request: FastifyRequest) => {
-      if (!request.user)
-        throw new Error("User rate limiting requires authentication.");
-      return request.getDecorator<AuthUser>("user").id;
-    };
-    const readLimiter = app.createRateLimit({
-      max: readMax,
-      keyGenerator: userKey,
-    });
-    const writeLimiter = app.createRateLimit({
-      max: writeMax,
-      keyGenerator: userKey,
-    });
-
+    async function enforce(
+      scope: string,
+      key: string,
+      max: number,
+      reply: FastifyReply,
+    ) {
+      let result: Awaited<ReturnType<RateLimitMongoStore["consume"]>>;
+      try {
+        result = await store.consume(scope, key, timeWindow, max);
+      } catch {
+        throw Object.assign(
+          new Error("Request limiting unavailable. Try again later."),
+          { statusCode: 503 },
+        );
+      }
+      reply.header("X-RateLimit-Scope", scope);
+      reply.header("X-RateLimit-Limit", max);
+      reply.header("X-RateLimit-Remaining", result.remaining);
+      reply.header("X-RateLimit-Reset", result.retryAfter);
+      if (result.allowed) return;
+      reply.header("Retry-After", result.retryAfter);
+      throw Object.assign(
+        new Error("Too many requests. Retry after the indicated delay."),
+        { statusCode: 429 },
+      );
+    }
     app.addHook("onRequest", async (request, reply) => {
-      await enforceLimit(ipLimiter, "ip", request, reply);
+      await enforce("ip", ipKey(request.ip), ipMax, reply);
     });
-    // Auth runs in onRequest. preParsing runs afterwards but before body parsing
-    // and validation, so invalid authenticated requests still consume allowance.
     app.addHook("preParsing", async (request, reply, payload) => {
       if (request.user) {
         const read = request.method === "GET" || request.method === "HEAD";
-        await enforceLimit(
-          read ? readLimiter : writeLimiter,
+        await enforce(
           read ? "user-read" : "user-write",
-          request,
+          request.getDecorator<AuthUser>("user").id,
+          read ? readMax : writeMax,
           reply,
         );
       }
