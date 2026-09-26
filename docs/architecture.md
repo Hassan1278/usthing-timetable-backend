@@ -102,6 +102,13 @@ Using a calendar library avoids hand-written escaping and line-folding rules.
 Scan, expansion and output limits bound expensive requests; oversized work fails
 explicitly instead of returning an apparently complete partial calendar.
 
+Event colors are validated RGB hex values. Creation resolves a category default
+and stores it, so later category edits do not overwrite a chosen color. The shared
+response mapper supplies defaults for older documents without rewriting them;
+the next event edit persists that value. Occurrences inherit the series color and
+can override it using the same validated field. Colors are API presentation data;
+ICS export does not currently include them.
+
 ## Concurrency and deployment tradeoffs
 
 Rate limits bound request frequency. They do not solve races. The owner lock

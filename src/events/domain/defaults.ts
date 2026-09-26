@@ -11,11 +11,30 @@ export type ResolvedEmailNotifications =
 
 export type EventWithDefaults = Omit<
   CreateEventInput,
-  "emailNotifications" | "recurrence"
+  "emailNotifications" | "recurrence" | "color"
 > & {
+  color: string;
   emailNotifications: ResolvedEmailNotifications;
   recurrence?: ResolvedRecurrence;
 };
+
+/** Defaults are applied once; changing category does not overwrite a saved color. */
+export const DEFAULT_EVENT_COLORS: Readonly<
+  Record<CreateEventInput["eventType"], string>
+> = {
+  class: "#2563EB",
+  appointment: "#DC2626",
+  club: "#7C3AED",
+  study: "#16A34A",
+  personal: "#DB2777",
+  other: "#64748B",
+};
+
+export function resolveEventColor(
+  event: Pick<CreateEventInput, "color" | "eventType">,
+): string {
+  return event.color ?? DEFAULT_EVENT_COLORS[event.eventType];
+}
 
 const DEFAULT_REMINDER_MINUTES = [1440, 120] as const;
 
@@ -48,6 +67,7 @@ export function applyCreateEventDefaults(
   const resolved = resolveRecurrence(input.schedule, recurrence);
   return {
     ...fields,
+    color: resolveEventColor(input),
     emailNotifications: resolveEmailNotifications(settings),
     ...(resolved ? { recurrence: resolved } : {}),
   };

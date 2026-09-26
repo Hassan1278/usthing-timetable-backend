@@ -105,6 +105,7 @@ test("all-day events allowing conflicts retain their details and reminder defaul
 
   expect<unknown>(result).toEqual({
     ...before,
+    color: "#DC2626",
     emailNotifications: { enabled: true, minutesBefore: [1440, 120] },
   });
   expect(result).not.toBe(input);

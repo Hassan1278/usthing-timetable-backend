@@ -15,6 +15,7 @@ export const OccurrencePatchSchema = Type.Partial(
     "description",
     "location",
     "eventType",
+    "color",
     "schedule",
     "emailNotifications",
   ]),

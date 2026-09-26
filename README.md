@@ -57,6 +57,7 @@ curl -i http://localhost:3000/events \
   -d '{
     "title": "Study session",
     "eventType": "appointment",
+    "color": "#DC2626",
     "allowConflicts": false,
     "schedule": {
       "kind": "timed",
@@ -139,6 +140,13 @@ Important rules:
 - Optional `recurrence` accepts `daily` or `weekly`. Its inclusive `endsOn`
   defaults to 12 calendar months after the first start and cannot exceed that.
   Occurrences are calculated from a stored parent and its exceptions.
+- Optional `color` accepts a six-digit RGB hex string such as `#2563EB`.
+  POST defaults by category: class `#2563EB` (blue), appointment `#DC2626` (red),
+  club `#7C3AED` (purple), study `#16A34A` (green), personal `#DB2777` (pink),
+  other `#64748B` (slate). GET always returns the effective color. PATCH preserves
+  an omitted color, even when changing category; supply `color` to change it.
+  Occurrences inherit their series color unless individually overridden. Older
+  events without a stored color use their category default without a migration.
 - With `allowConflicts: false`, a proposed write must not overlap existing events
   or occurrences belonging to that user. `true` permits that write to overlap;
   existing events still participate in other conflict checks. Touching endpoints
@@ -247,7 +255,7 @@ bun run check    # Formatting and lint checks
 bun run test     # Unit and HTTP integration tests, with coverage
 ```
 
-The latest verified suite has 386 passing tests. Integration tests use Fastify
+The latest verified suite has 404 passing tests. Integration tests use Fastify
 injection and temporary real MongoDB instances to exercise persistence, ownership,
 conflicts, revisions, recurrence and failure cases. Reminder tests use a local SMTP
 server to check delivery, retries, restarts, competing workers and changed events.

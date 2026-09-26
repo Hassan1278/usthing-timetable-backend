@@ -15,9 +15,11 @@ export type StoredSchedule =
  */
 export type EventDocument = Omit<
   EventWithDefaults,
-  "schedule" | "recurrence"
+  "schedule" | "recurrence" | "color"
 > & {
   _id: ObjectId;
+  /** Older documents may omit color; reads resolve their category default. */
+  color?: string;
   /** Durable planning marker, saved atomically with event changes; never public. */
   remindersPending?: boolean;
   remindersNextPlanAt?: Date;

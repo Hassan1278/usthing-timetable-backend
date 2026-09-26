@@ -56,6 +56,14 @@ export const EventTypeSchema = Type.Union([
   Type.Literal("other"),
 ]);
 
+export const ColorSchema = Type.String({
+  minLength: 7,
+  maxLength: 7,
+  pattern: "^#[0-9a-fA-F]{6}$",
+  description:
+    "Six-digit RGB hex color, e.g. #2563EB. Defaults by event category on creation; PATCH preserves omitted colors.",
+});
+
 export const CreateEventSchema = Type.Object(
   {
     title: Type.String({
@@ -67,6 +75,7 @@ export const CreateEventSchema = Type.Object(
     location: Type.Optional(Type.String({ maxLength: 200 })),
 
     eventType: EventTypeSchema,
+    color: Type.Optional(ColorSchema),
     allowConflicts: Type.Boolean({
       description:
         "Allow this event to overlap other events. False rejects overlapping creates or updates.",

@@ -1,5 +1,8 @@
 import { Compile } from "typebox/compile";
-import { resolveEmailNotifications } from "../domain/defaults.js";
+import {
+  resolveEmailNotifications,
+  resolveEventColor,
+} from "../domain/defaults.js";
 import type { EventDocument, StoredSchedule } from "../domain/model.js";
 import { EventValidationError, validateEvent } from "../domain/validation.js";
 import { type CreateEventInput, CreateEventSchema } from "../schemas/event.js";
@@ -43,6 +46,7 @@ export function eventInput(event: EventDocument): CreateEventInput {
   return {
     title: event.title,
     eventType: event.eventType,
+    color: resolveEventColor(event),
     allowConflicts: event.allowConflicts,
     schedule: inputSchedule(event.schedule),
     emailNotifications: event.emailNotifications,

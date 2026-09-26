@@ -1,6 +1,8 @@
 import { type Static, Type } from "typebox";
+import { resolveEventColor } from "../domain/defaults.js";
 import type { ExpandedEvent } from "../recurrence/series.js";
 import {
+  ColorSchema,
   CreateEventSchema,
   EmailNotificationsSchema,
 } from "../schemas/event.js";
@@ -10,6 +12,7 @@ import { ResolvedRecurrenceSchema } from "../schemas/recurrence.js";
 export const EventResponseSchema = Type.Object(
   {
     ...CreateEventSchema.properties,
+    color: ColorSchema,
     recurrence: Type.Optional(ResolvedRecurrenceSchema),
     exceptions: Type.Optional(Type.Array(ExceptionSchema, { maxItems: 367 })),
     originalStart: Type.Optional(Type.String()),
@@ -55,6 +58,7 @@ export function toEventResponse(event: ExpandedEvent): EventResponse {
       : {}),
     ...(event.location !== undefined ? { location: event.location } : {}),
     eventType: event.eventType,
+    color: resolveEventColor(event),
     allowConflicts: event.allowConflicts,
     schedule:
       event.schedule.kind === "timed"
